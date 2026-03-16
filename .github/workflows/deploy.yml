@@ -65,16 +65,23 @@ jobs:
         run: helm dependency update helm/
 
       - name: Deploy with Helm
+        env:
+          DOCKERCONFIG: ${{ secrets.GHCR_DOCKERCONFIGJSON }}
         run: |
+          python3 -c "
+          import os, yaml
+          with open('/tmp/ghcr-secret.yaml', 'w') as f:
+              yaml.dump({'ghcrSecret': {'dockerconfigjson': os.environ['DOCKERCONFIG']}}, f)
+          "
           helm upgrade --install helpdesk-pro helm/ \
             --namespace ${{ env.NAMESPACE }} \
             --values helm/values.yaml \
             --values helm/values.openshift.yaml \
+            --values /tmp/ghcr-secret.yaml \
             --set frontend.image.tag=${{ github.sha }} \
             --set backend.image.tag=${{ github.sha }} \
             --set frontend.image.repository=${{ env.IMAGE_OWNER }}/helpdesk-frontend \
             --set backend.image.repository=${{ env.IMAGE_OWNER }}/helpdesk-backend \
-            --set ghcrSecret.dockerconfigjson=${{ secrets.GHCR_DOCKERCONFIGJSON }} \
             --set backend.keycloak.authority=https://${{ secrets.KEYCLOAK_HOST }}/realms/helpdesk \
             --set keycloakRoute.host=${{ secrets.KEYCLOAK_HOST }} \
             --wait --timeout 10m
