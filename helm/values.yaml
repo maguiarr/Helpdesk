@@ -90,3 +90,12 @@ keycloak:
     requests:
       cpu: 500m
       memory: 512Mi
+  # Use the top-level PostgreSQL instance instead of Keycloak's bundled one
+  postgresql:
+    enabled: false
+  externalDatabase:
+    host: helpdesk-pro-postgresql
+    port: 5432
+    user: helpdesk
+    password: helpdesk123
+    database: helpdesk
