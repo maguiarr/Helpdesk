@@ -61,11 +61,6 @@ jobs:
       - name: Log in to OpenShift
         run: oc login --token=${{ secrets.OPENSHIFT_TOKEN }} --server=${{ secrets.OPENSHIFT_SERVER }}
 
-      - name: Clean up stale resources
-        run: |
-          oc delete statefulset,deployment,pvc -n ${{ env.NAMESPACE }} \
-            -l app.kubernetes.io/instance=helpdesk-pro --ignore-not-found
-
       - name: Clean up failed Helm release
         run: |
           RELEASE_EXISTS=$(helm list -n ${{ env.NAMESPACE }} -a --filter '^helpdesk-pro$' -q)
@@ -73,6 +68,8 @@ jobs:
             STATUS=$(helm status helpdesk-pro -n ${{ env.NAMESPACE }} -o json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "unknown")
             if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ]; then
               echo "Removing failed Helm release ($STATUS)..."
+              oc delete statefulset,deployment,pvc -n ${{ env.NAMESPACE }} \
+                -l app.kubernetes.io/instance=helpdesk-pro --ignore-not-found
               helm uninstall helpdesk-pro -n ${{ env.NAMESPACE }} --no-hooks || true
             fi
           fi
