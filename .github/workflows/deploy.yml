@@ -66,7 +66,7 @@ jobs:
 
       - name: Clean up failed Helm release and orphaned resources
         run: |
-          # Remove any failed Helm release history so upgrade --install starts fresh
+          # Remove any failed Helm release history
           RELEASE_EXISTS=$(helm list -n ${{ env.NAMESPACE }} -a --filter '^helpdesk-pro$' -q)
           if [ -n "$RELEASE_EXISTS" ]; then
             STATUS=$(helm status helpdesk-pro -n ${{ env.NAMESPACE }} -o json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "unknown")
@@ -76,7 +76,8 @@ jobs:
             fi
           fi
 
-          # Adopt any orphaned PostgreSQL resources left behind
+          # Delete orphaned PostgreSQL resources so fresh helm install can recreate them
+          # PVCs are NOT deleted — PostgreSQL data is preserved
           RESOURCES=(
             "networkpolicy/helpdesk-pro-postgresql"
             "poddisruptionbudget/helpdesk-pro-postgresql"
@@ -87,17 +88,8 @@ jobs:
             "statefulset/helpdesk-pro-postgresql"
           )
           for res in "${RESOURCES[@]}"; do
-            if oc get "$res" -n ${{ env.NAMESPACE }} &>/dev/null; then
-              oc annotate "$res" -n ${{ env.NAMESPACE }} meta.helm.sh/release-name=helpdesk-pro --overwrite
-              oc annotate "$res" -n ${{ env.NAMESPACE }} meta.helm.sh/release-namespace=${{ env.NAMESPACE }} --overwrite
-              oc label "$res" -n ${{ env.NAMESPACE }} app.kubernetes.io/managed-by=Helm --overwrite
-            fi
+            oc delete "$res" -n ${{ env.NAMESPACE }} --ignore-not-found
           done
-
-          # Delete the StatefulSet (keep pods) so Helm can recreate it with correct spec
-          if oc get statefulset/helpdesk-pro-postgresql -n ${{ env.NAMESPACE }} &>/dev/null; then
-            oc delete statefulset/helpdesk-pro-postgresql -n ${{ env.NAMESPACE }} --cascade=orphan
-          fi
 
       - name: Deploy with Helm
         env:
