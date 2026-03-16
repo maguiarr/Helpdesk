@@ -1,0 +1,80 @@
+name: Build & Deploy to OpenShift
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+  NAMESPACE: helpdesk-pro
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - context: ./backend
+            image: helpdesk-backend
+          - context: ./frontend
+            image: helpdesk-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.image }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.14.0
+
+      - name: Install oc CLI
+        uses: redhat-actions/openshift-tools-installer@v1
+        with:
+          oc: "4"
+
+      - name: Log in to OpenShift
+        run: oc login --token=${{ secrets.OPENSHIFT_TOKEN }} --server=${{ secrets.OPENSHIFT_SERVER }}
+
+      - name: Helm dependency update
+        run: helm dependency update helm/
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install helpdesk-pro helm/ \
+            --namespace ${{ env.NAMESPACE }} \
+            --values helm/values.yaml \
+            --values helm/values.openshift.yaml \
+            --set frontend.image.tag=${{ github.sha }} \
+            --set backend.image.tag=${{ github.sha }} \
+            --set frontend.image.repository=${{ env.IMAGE_OWNER }}/helpdesk-frontend \
+            --set backend.image.repository=${{ env.IMAGE_OWNER }}/helpdesk-backend \
+            --set ghcrSecret.dockerconfigjson=${{ secrets.GHCR_DOCKERCONFIGJSON }} \
+            --set backend.keycloak.authority=https://${{ secrets.KEYCLOAK_HOST }}/realms/helpdesk \
+            --set keycloakRoute.host=${{ secrets.KEYCLOAK_HOST }} \
+            --wait --timeout 10m

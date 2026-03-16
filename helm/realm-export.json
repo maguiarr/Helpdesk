@@ -1,0 +1,122 @@
+{
+  "realm": "helpdesk",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "employee",
+        "description": "Regular employee who can submit and view their own tickets",
+        "composite": false
+      },
+      {
+        "name": "helpdesk-admin",
+        "description": "Help desk administrator who can manage all tickets",
+        "composite": false
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "helpdesk-frontend",
+      "name": "HelpDesk Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:4200/*",
+        "https://*.apps.*.openshiftapps.com/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200",
+        "https://*.apps.*.openshiftapps.com"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:4200/*##https://*.apps.*.openshiftapps.com/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "helpdesk-backend-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "helpdesk-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "helpdesk-backend",
+      "name": "HelpDesk Backend",
+      "enabled": true,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "secret": "backend-secret",
+      "bearerOnly": true
+    }
+  ],
+  "users": [
+    {
+      "username": "employee1",
+      "email": "employee1@helpdesk.local",
+      "firstName": "Jane",
+      "lastName": "Employee",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "username": "admin1",
+      "email": "admin1@helpdesk.local",
+      "firstName": "Alex",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee",
+        "helpdesk-admin"
+      ]
+    }
+  ],
+  "scopeMappings": [
+    {
+      "client": "helpdesk-frontend",
+      "roles": [
+        "employee",
+        "helpdesk-admin"
+      ]
+    }
+  ]
+}

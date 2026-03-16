@@ -1,0 +1,90 @@
+# -- Global
+global:
+  imageRegistry: ghcr.io
+
+# -- Frontend
+frontend:
+  image:
+    repository: OWNER/helpdesk-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+  keycloakRealm: helpdesk
+  keycloakClientId: helpdesk-frontend
+  route:
+    host: ""
+
+# -- Backend
+backend:
+  image:
+    repository: OWNER/helpdesk-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 200m
+      memory: 128Mi
+  route:
+    host: ""
+  keycloak:
+    authority: ""
+    clientId: helpdesk-backend
+    clientSecret: backend-secret
+
+# -- Keycloak route
+keycloakRoute:
+  host: ""
+
+# -- GHCR pull secret
+ghcrSecret:
+  enabled: true
+  dockerconfigjson: ""
+
+# -- Bitnami PostgreSQL
+postgresql:
+  auth:
+    username: helpdesk
+    password: helpdesk123
+    database: helpdesk
+  primary:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+    persistence:
+      size: 1Gi
+
+# -- Bitnami Keycloak
+keycloak:
+  auth:
+    adminUser: admin
+    adminPassword: admin
+  extraStartupArgs: "--import-realm"
+  extraVolumeMounts:
+    - name: realm-config
+      mountPath: /opt/bitnami/keycloak/data/import
+  extraVolumes:
+    - name: realm-config
+      configMap:
+        name: keycloak-realm
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  realm-export.json: |-
+    {{ .Files.Get "realm-export.json" | nindent 4 }}

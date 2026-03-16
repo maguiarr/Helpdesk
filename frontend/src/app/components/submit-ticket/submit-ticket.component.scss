@@ -1,0 +1,47 @@
+.submit-ticket-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.actions {
+  margin-top: 16px;
+}
+
+.tickets-card {
+  margin-top: 8px;
+}
+
+.no-data {
+  text-align: center;
+  color: rgba(0, 0, 0, 0.54);
+  padding: 24px;
+}
+
+.priority-critical {
+  --mdc-chip-label-text-color: white;
+  --mdc-chip-elevated-container-color: #d32f2f;
+}
+
+.priority-high {
+  --mdc-chip-label-text-color: white;
+  --mdc-chip-elevated-container-color: #f57c00;
+}
+
+.priority-medium {
+  --mdc-chip-elevated-container-color: #fff3e0;
+}
+
+.priority-low {
+  --mdc-chip-elevated-container-color: #e8f5e9;
+}
+
+mat-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

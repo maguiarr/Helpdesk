@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-frontend-config
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  config.json: |
+    {
+      "keycloakUrl": "https://{{ .Values.keycloakRoute.host }}",
+      "keycloakRealm": "{{ .Values.frontend.keycloakRealm }}",
+      "keycloakClientId": "{{ .Values.frontend.keycloakClientId }}",
+      "apiUrl": "/api"
+    }

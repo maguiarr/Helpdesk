@@ -1,0 +1,34 @@
+# Node
+node_modules/
+dist/
+.angular/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Environment
+.env
+.env.*
+
+# Helm
+helm/charts/
+*.tgz
+
+# Claude Code
+.claude/settings.local.json
+
+# Claude Code
+.claude/settings.local.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

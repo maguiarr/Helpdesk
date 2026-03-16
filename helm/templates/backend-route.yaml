@@ -1,0 +1,20 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  {{- if .Values.backend.route.host }}
+  host: {{ .Values.backend.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ .Release.Name }}-backend
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

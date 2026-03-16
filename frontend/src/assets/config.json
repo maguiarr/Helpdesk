@@ -1,0 +1,6 @@
+{
+  "keycloakUrl": "http://localhost:8180",
+  "keycloakRealm": "helpdesk",
+  "keycloakClientId": "helpdesk-frontend",
+  "apiUrl": "/api"
+}

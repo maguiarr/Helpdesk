@@ -1,0 +1,89 @@
+<div class="submit-ticket-page">
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>
+        <mat-icon>add_circle</mat-icon>
+        Submit a New Ticket
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <form [formGroup]="form" (ngSubmit)="submit()">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Title</mat-label>
+          <input matInput formControlName="title" placeholder="Brief summary of the issue">
+          @if (form.get('title')?.hasError('required') && form.get('title')?.touched) {
+            <mat-error>Title is required</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Description</mat-label>
+          <textarea matInput formControlName="description" rows="4"
+                    placeholder="Describe the issue in detail"></textarea>
+          @if (form.get('description')?.hasError('required') && form.get('description')?.touched) {
+            <mat-error>Description is required</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Priority</mat-label>
+          <mat-select formControlName="priority">
+            @for (p of priorities; track p) {
+              <mat-option [value]="p">{{ p }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <div class="actions">
+          <button mat-raised-button color="primary" type="submit" [disabled]="form.invalid">
+            <mat-icon>send</mat-icon>
+            Submit Ticket
+          </button>
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="tickets-card">
+    <mat-card-header>
+      <mat-card-title>
+        <mat-icon>list</mat-icon>
+        My Tickets
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @if (myTickets.length === 0) {
+        <p class="no-data">No tickets submitted yet.</p>
+      } @else {
+        <table mat-table [dataSource]="myTickets" class="full-width">
+          <ng-container matColumnDef="title">
+            <th mat-header-cell *matHeaderCellDef>Title</th>
+            <td mat-cell *matCellDef="let t">{{ t.title }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="priority">
+            <th mat-header-cell *matHeaderCellDef>Priority</th>
+            <td mat-cell *matCellDef="let t">
+              <mat-chip [class]="'priority-' + t.priority.toLowerCase()">{{ t.priority }}</mat-chip>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Status</th>
+            <td mat-cell *matCellDef="let t">
+              <mat-chip>{{ t.status }}</mat-chip>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="createdAt">
+            <th mat-header-cell *matHeaderCellDef>Created</th>
+            <td mat-cell *matCellDef="let t">{{ t.createdAt | date:'short' }}</td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+        </table>
+      }
+    </mat-card-content>
+  </mat-card>
+</div>

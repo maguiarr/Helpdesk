@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "HelpDeskApi": {
+      "commandName": "Project",
+      "applicationUrl": "http://localhost:8080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "CONNECTION_STRING": "Host=localhost;Port=5432;Database=helpdesk;Username=helpdesk;Password=helpdesk123",
+        "Keycloak__Authority": "http://localhost:8180/realms/helpdesk",
+        "Keycloak__AuthorizationUrl": "http://localhost:8180/realms/helpdesk/protocol/openid-connect/auth",
+        "Keycloak__ClientId": "helpdesk-backend",
+        "Keycloak__ClientSecret": "backend-secret"
+      }
+    }
+  }
+}
