@@ -34,15 +34,15 @@
       "protocol": "openid-connect",
       "redirectUris": [
         "http://localhost:4200/*",
-        "https://*.openshiftapps.com/*"
+        "https://*"
       ],
       "webOrigins": [
         "http://localhost:4200",
-        "https://*.openshiftapps.com"
+        "+"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:4200/*##https://*.openshiftapps.com/*"
+        "post.logout.redirect.uris": "http://localhost:4200/*##https://*"
       },
       "protocolMappers": [
         {

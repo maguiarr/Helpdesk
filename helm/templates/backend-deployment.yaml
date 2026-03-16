@@ -45,6 +45,8 @@ spec:
                   key: connectionString
             - name: Keycloak__Authority
               value: "{{ .Values.backend.keycloak.authority }}"
+            - name: Keycloak__MetadataAddress
+              value: "http://{{ .Release.Name }}-keycloak:8080/realms/helpdesk/.well-known/openid-configuration"
             - name: Keycloak__ClientId
               value: "{{ .Values.backend.keycloak.clientId }}"
             - name: Keycloak__ClientSecret

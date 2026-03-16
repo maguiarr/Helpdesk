@@ -28,7 +28,11 @@ spec:
             - --import-realm
             - --health-enabled=true
             - --proxy-headers=xforwarded
+            {{- if .Values.keycloakRoute.host }}
+            - --hostname=https://{{ .Values.keycloakRoute.host }}
+            {{- else }}
             - --hostname-strict=false
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
