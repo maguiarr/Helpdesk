@@ -1,6 +1,8 @@
 # -- Global
 global:
   imageRegistry: ghcr.io
+  security:
+    allowInsecureImages: true
 
 # -- Frontend
 frontend:
