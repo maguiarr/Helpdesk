@@ -1,4 +1,4 @@
-global:
-  compatibility:
-    openshift:
-      adaptSecurityContext: auto
+# OpenShift-specific overrides
+# Security contexts in templates already use runAsNonRoot: true
+# without hardcoded UIDs, which is compatible with OpenShift's
+# restricted SCC that assigns arbitrary UIDs.

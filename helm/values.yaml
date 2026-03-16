@@ -1,7 +1,5 @@
 # -- Global
 global:
-  security:
-    allowInsecureImages: true
   imagePullSecrets:
     - helpdesk-pro-ghcr-pull-secret
 
@@ -56,8 +54,12 @@ ghcrSecret:
   enabled: true
   dockerconfigjson: ""
 
-# -- Bitnami PostgreSQL
+# -- PostgreSQL
 postgresql:
+  image:
+    registry: docker.io
+    repository: postgres
+    tag: "16-alpine"
   auth:
     username: helpdesk
     password: helpdesk123
@@ -73,19 +75,15 @@ postgresql:
     persistence:
       size: 1Gi
 
-# -- Bitnami Keycloak
+# -- Keycloak
 keycloak:
+  image:
+    registry: quay.io
+    repository: keycloak/keycloak
+    tag: "25.0"
   auth:
     adminUser: admin
     adminPassword: admin
-  extraStartupArgs: "--import-realm"
-  extraVolumeMounts:
-    - name: realm-config
-      mountPath: /opt/bitnami/keycloak/data/import
-  extraVolumes:
-    - name: realm-config
-      configMap:
-        name: keycloak-realm
   resources:
     limits:
       cpu: 1000m
@@ -93,9 +91,6 @@ keycloak:
     requests:
       cpu: 500m
       memory: 512Mi
-  # Use the top-level PostgreSQL instance instead of Keycloak's bundled one
-  postgresql:
-    enabled: false
   externalDatabase:
     host: helpdesk-pro-postgresql
     port: 5432
