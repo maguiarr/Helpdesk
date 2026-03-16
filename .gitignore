@@ -8,6 +8,7 @@ bin/
 obj/
 *.user
 *.suo
+appsettings.Development.json
 
 # Environment
 .env
@@ -16,9 +17,6 @@ obj/
 # Helm
 helm/charts/
 *.tgz
-
-# Claude Code
-.claude/settings.local.json
 
 # Claude Code
 .claude/settings.local.json

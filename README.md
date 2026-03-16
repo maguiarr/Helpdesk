@@ -62,7 +62,17 @@ Services will be available at:
 | `OPENSHIFT_TOKEN` | `oc whoami -t` |
 | `OPENSHIFT_SERVER` | `oc whoami --show-server` |
 | `KEYCLOAK_HOST` | Route hostname for Keycloak |
-| `GHCR_DOCKERCONFIGJSON` | Base64-encoded Docker config for GHCR |
+| `OPENSHIFT_NAMESPACE` | Your sandbox namespace (e.g. `maguiarr-dev`) |
+| `GHCR_DOCKERCONFIGJSON` | Base64-encoded Docker config for GHCR pull secret |
+
+To generate `GHCR_DOCKERCONFIGJSON`, create a GitHub Personal Access Token with `read:packages` scope
+(**Settings → Developer settings → Personal access tokens → Tokens (classic)**), then run:
+
+```bash
+echo '{"auths":{"ghcr.io":{"auth":"'$(echo -n "<github-username>:<YOUR_PAT>" | base64)'"}}}'
+```
+
+Copy the full JSON output as the secret value.
 
 ### 2. Deploy
 
