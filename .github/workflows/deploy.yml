@@ -64,6 +64,25 @@ jobs:
       - name: Helm dependency update
         run: helm dependency update helm/
 
+      - name: Adopt orphaned resources
+        run: |
+          RESOURCES=(
+            "networkpolicy/helpdesk-pro-postgresql"
+            "poddisruptionbudget/helpdesk-pro-postgresql"
+            "serviceaccount/helpdesk-pro-postgresql"
+            "secret/helpdesk-pro-postgresql"
+            "service/helpdesk-pro-postgresql-hl"
+            "service/helpdesk-pro-postgresql"
+            "statefulset/helpdesk-pro-postgresql"
+          )
+          for res in "${RESOURCES[@]}"; do
+            if oc get "$res" -n ${{ env.NAMESPACE }} &>/dev/null; then
+              oc annotate "$res" -n ${{ env.NAMESPACE }} meta.helm.sh/release-name=helpdesk-pro --overwrite
+              oc annotate "$res" -n ${{ env.NAMESPACE }} meta.helm.sh/release-namespace=${{ env.NAMESPACE }} --overwrite
+              oc label "$res" -n ${{ env.NAMESPACE }} app.kubernetes.io/managed-by=Helm --overwrite
+            fi
+          done
+
       - name: Deploy with Helm
         env:
           DOCKERCONFIG: ${{ secrets.GHCR_DOCKERCONFIGJSON }}
