@@ -66,30 +66,40 @@ jobs:
 
       - name: Clean up failed Helm release and orphaned resources
         run: |
+          set -x
           # Remove any failed Helm release history
           RELEASE_EXISTS=$(helm list -n ${{ env.NAMESPACE }} -a --filter '^helpdesk-pro$' -q)
           if [ -n "$RELEASE_EXISTS" ]; then
             STATUS=$(helm status helpdesk-pro -n ${{ env.NAMESPACE }} -o json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "unknown")
+            echo "Current release status: $STATUS"
             if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ]; then
-              echo "Removing failed Helm release ($STATUS)..."
+              echo "Removing failed Helm release..."
               helm uninstall helpdesk-pro -n ${{ env.NAMESPACE }} --no-hooks || true
             fi
+          else
+            echo "No existing Helm release found"
           fi
 
           # Delete orphaned PostgreSQL resources so fresh helm install can recreate them
           # PVCs are NOT deleted — PostgreSQL data is preserved
-          RESOURCES=(
-            "networkpolicy/helpdesk-pro-postgresql"
-            "poddisruptionbudget/helpdesk-pro-postgresql"
-            "serviceaccount/helpdesk-pro-postgresql"
-            "secret/helpdesk-pro-postgresql"
-            "service/helpdesk-pro-postgresql-hl"
-            "service/helpdesk-pro-postgresql"
-            "statefulset/helpdesk-pro-postgresql"
-          )
-          for res in "${RESOURCES[@]}"; do
-            oc delete "$res" -n ${{ env.NAMESPACE }} --ignore-not-found
+          echo "Deleting orphaned postgresql resources..."
+          oc delete networkpolicy,poddisruptionbudget,serviceaccount,secret,service,statefulset \
+            -n ${{ env.NAMESPACE }} \
+            -l app.kubernetes.io/name=postgresql \
+            --ignore-not-found || true
+          oc delete networkpolicy,poddisruptionbudget,serviceaccount,secret,service,statefulset \
+            -n ${{ env.NAMESPACE }} \
+            -l app.kubernetes.io/instance=helpdesk-pro \
+            -l app.kubernetes.io/name=postgresql \
+            --ignore-not-found || true
+          # Also try by exact name in case labels are missing
+          for res in networkpolicy poddisruptionbudget serviceaccount secret service statefulset; do
+            oc delete "$res" helpdesk-pro-postgresql -n ${{ env.NAMESPACE }} --ignore-not-found 2>&1 || true
           done
+          oc delete service helpdesk-pro-postgresql-hl -n ${{ env.NAMESPACE }} --ignore-not-found 2>&1 || true
+
+          echo "Remaining postgresql resources:"
+          oc get all -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=postgresql 2>&1 || true
 
       - name: Deploy with Helm
         env:
