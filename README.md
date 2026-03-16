@@ -62,7 +62,7 @@ Services will be available at:
 | `OPENSHIFT_TOKEN` | `oc whoami -t` |
 | `OPENSHIFT_SERVER` | `oc whoami --show-server` |
 | `KEYCLOAK_HOST` | Route hostname for Keycloak |
-| `OPENSHIFT_NAMESPACE` | Your sandbox namespace (e.g. `maguiarr-dev`) |
+| `OPENSHIFT_NAMESPACE` | Your OpenShift namespace (e.g. `myuser-dev`) |
 | `GHCR_DOCKERCONFIGJSON` | Base64-encoded Docker config for GHCR pull secret |
 
 To generate `GHCR_DOCKERCONFIGJSON`, create a GitHub Personal Access Token with `read:packages` scope

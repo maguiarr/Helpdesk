@@ -7,7 +7,7 @@ global:
 frontend:
   image:
     registry: ghcr.io
-    repository: OWNER/helpdesk-frontend
+    repository: your-github-username/helpdesk-frontend
     tag: latest
     pullPolicy: IfNotPresent
   replicas: 1
@@ -27,7 +27,7 @@ frontend:
 backend:
   image:
     registry: ghcr.io
-    repository: OWNER/helpdesk-backend
+    repository: your-github-username/helpdesk-backend
     tag: latest
     pullPolicy: IfNotPresent
   replicas: 1
