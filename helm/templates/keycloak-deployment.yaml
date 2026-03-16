@@ -27,6 +27,8 @@ spec:
             - start-dev
             - --import-realm
             - --health-enabled=true
+            - --proxy-headers=xforwarded
+            - --hostname-strict=false
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -40,6 +42,10 @@ spec:
               protocol: TCP
               name: management
           env:
+            - name: KC_SPI_IMPORT_DIR
+              value: /opt/keycloak/data/import
+            - name: KC_SPI_IMPORT_STRATEGY
+              value: OVERWRITE_EXISTING
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL
