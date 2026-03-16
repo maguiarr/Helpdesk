@@ -82,6 +82,11 @@ jobs:
               oc label "$res" -n ${{ env.NAMESPACE }} app.kubernetes.io/managed-by=Helm --overwrite
             fi
           done
+          # Delete the StatefulSet without deleting its pods so Helm can recreate it
+          # (StatefulSet spec has immutable fields that can't be patched)
+          if oc get statefulset/helpdesk-pro-postgresql -n ${{ env.NAMESPACE }} &>/dev/null; then
+            oc delete statefulset/helpdesk-pro-postgresql -n ${{ env.NAMESPACE }} --cascade=orphan
+          fi
 
       - name: Deploy with Helm
         env:
