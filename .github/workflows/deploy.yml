@@ -64,52 +64,45 @@ jobs:
       - name: Helm dependency update
         run: helm dependency update helm/
 
-      - name: Clean up failed Helm release and orphaned resources
+      - name: Deploy with Helm
+        env:
+          DOCKERCONFIG: ${{ secrets.GHCR_DOCKERCONFIGJSON }}
         run: |
           set -x
-          # Remove any failed Helm release history
+
+          # --- Clean up any failed Helm release ---
           RELEASE_EXISTS=$(helm list -n ${{ env.NAMESPACE }} -a --filter '^helpdesk-pro$' -q)
           if [ -n "$RELEASE_EXISTS" ]; then
             STATUS=$(helm status helpdesk-pro -n ${{ env.NAMESPACE }} -o json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['status'])" 2>/dev/null || echo "unknown")
             echo "Current release status: $STATUS"
             if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ]; then
-              echo "Removing failed Helm release..."
               helm uninstall helpdesk-pro -n ${{ env.NAMESPACE }} --no-hooks || true
             fi
-          else
-            echo "No existing Helm release found"
           fi
 
-          # Delete orphaned PostgreSQL resources so fresh helm install can recreate them
-          # PVCs are NOT deleted — PostgreSQL data is preserved
-          echo "Deleting orphaned postgresql resources..."
-          oc delete networkpolicy,poddisruptionbudget,serviceaccount,secret,service,statefulset \
-            -n ${{ env.NAMESPACE }} \
-            -l app.kubernetes.io/name=postgresql \
-            --ignore-not-found || true
-          oc delete networkpolicy,poddisruptionbudget,serviceaccount,secret,service,statefulset \
-            -n ${{ env.NAMESPACE }} \
-            -l app.kubernetes.io/instance=helpdesk-pro \
-            -l app.kubernetes.io/name=postgresql \
-            --ignore-not-found || true
-          # Also try by exact name in case labels are missing
+          # --- Delete ALL orphaned postgresql resources by name ---
+          echo "=== Checking for orphaned postgresql resources ==="
+          oc get networkpolicy,poddisruptionbudget,serviceaccount,secret,service,statefulset \
+            -n ${{ env.NAMESPACE }} 2>&1 | grep -i "helpdesk-pro-postgresql" || echo "None found via get"
+
           for res in networkpolicy poddisruptionbudget serviceaccount secret service statefulset; do
-            oc delete "$res" helpdesk-pro-postgresql -n ${{ env.NAMESPACE }} --ignore-not-found 2>&1 || true
+            echo "Deleting $res/helpdesk-pro-postgresql..."
+            oc delete "$res" helpdesk-pro-postgresql -n ${{ env.NAMESPACE }} --force --grace-period=0 2>&1 || true
           done
-          oc delete service helpdesk-pro-postgresql-hl -n ${{ env.NAMESPACE }} --ignore-not-found 2>&1 || true
+          oc delete service helpdesk-pro-postgresql-hl -n ${{ env.NAMESPACE }} --force --grace-period=0 2>&1 || true
 
-          echo "Remaining postgresql resources:"
-          oc get all -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=postgresql 2>&1 || true
+          echo "=== Verifying resources are gone ==="
+          oc get networkpolicy,poddisruptionbudget,serviceaccount,secret,service,statefulset \
+            -n ${{ env.NAMESPACE }} 2>&1 | grep -i "helpdesk-pro-postgresql" && echo "WARNING: resources still exist!" || echo "All clear"
 
-      - name: Deploy with Helm
-        env:
-          DOCKERCONFIG: ${{ secrets.GHCR_DOCKERCONFIGJSON }}
-        run: |
+          # --- Generate GHCR secret values file ---
           python3 -c "
           import os, yaml
           with open('/tmp/ghcr-secret.yaml', 'w') as f:
               yaml.dump({'ghcrSecret': {'dockerconfigjson': os.environ['DOCKERCONFIG']}}, f)
           "
+
+          # --- Deploy ---
           helm upgrade --install helpdesk-pro helm/ \
             --namespace ${{ env.NAMESPACE }} \
             --values helm/values.yaml \
