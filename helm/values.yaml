@@ -1,12 +1,13 @@
-# -- Global
+# -- Global (imageRegistry forces Bitnami subcharts to use Docker Hub instead of GHCR)
 global:
-  imageRegistry: ghcr.io
+  imageRegistry: docker.io
   security:
     allowInsecureImages: true
 
 # -- Frontend
 frontend:
   image:
+    registry: ghcr.io
     repository: OWNER/helpdesk-frontend
     tag: latest
     pullPolicy: IfNotPresent
@@ -26,6 +27,7 @@ frontend:
 # -- Backend
 backend:
   image:
+    registry: ghcr.io
     repository: OWNER/helpdesk-backend
     tag: latest
     pullPolicy: IfNotPresent
