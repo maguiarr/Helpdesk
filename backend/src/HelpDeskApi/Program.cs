@@ -5,7 +5,10 @@ using HelpDeskApi.Mapping;
 using HelpDeskApi.Middleware;
 using HelpDeskApi.Repositories;
 using HelpDeskApi.Services;
+using System.Security.Claims;
+using System.Text.Json;
 using Keycloak.AuthServices.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -52,6 +55,7 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
 });
 
 builder.Services.AddAuthorization();
+builder.Services.AddTransient<IClaimsTransformation, KeycloakRolesClaimsTransformation>();
 
 // DI
 builder.Services.AddScoped<ITicketRepository, TicketRepository>();
@@ -162,3 +166,30 @@ app.MapHealthChecks("/readyz", new Microsoft.AspNetCore.Diagnostics.HealthChecks
 });
 
 app.Run();
+
+public class KeycloakRolesClaimsTransformation : IClaimsTransformation
+{
+    public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+    {
+        var identity = principal.Identity as ClaimsIdentity;
+        if (identity is null) return Task.FromResult(principal);
+
+        var realmAccess = principal.FindFirst("realm_access")?.Value;
+        if (realmAccess is null) return Task.FromResult(principal);
+
+        using var doc = JsonDocument.Parse(realmAccess);
+        if (doc.RootElement.TryGetProperty("roles", out var roles))
+        {
+            foreach (var role in roles.EnumerateArray())
+            {
+                var value = role.GetString();
+                if (value is not null && !identity.HasClaim(ClaimTypes.Role, value))
+                {
+                    identity.AddClaim(new Claim(ClaimTypes.Role, value));
+                }
+            }
+        }
+
+        return Task.FromResult(principal);
+    }
+}
