@@ -183,9 +183,9 @@ public class KeycloakRolesClaimsTransformation : IClaimsTransformation
             foreach (var role in roles.EnumerateArray())
             {
                 var value = role.GetString();
-                if (value is not null && !identity.HasClaim(ClaimTypes.Role, value))
+                if (value is not null && !identity.HasClaim(identity.RoleClaimType, value))
                 {
-                    identity.AddClaim(new Claim(ClaimTypes.Role, value));
+                    identity.AddClaim(new Claim(identity.RoleClaimType, value));
                 }
             }
         }
