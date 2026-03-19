@@ -23,6 +23,9 @@ jobs:
             image: helpdesk-backend
           - context: ./frontend
             image: helpdesk-frontend
+          - context: .
+            image: helpdesk-jenkins
+            dockerfile: jenkins/Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +40,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile || format('{0}/Dockerfile', matrix.context) }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.image }}:${{ github.sha }}
@@ -94,4 +98,6 @@ jobs:
             --set backend.image.repository=${{ env.IMAGE_OWNER }}/helpdesk-backend \
             --set backend.keycloak.authority=https://${{ secrets.KEYCLOAK_HOST }}/realms/helpdesk \
             --set keycloakRoute.host=${{ secrets.KEYCLOAK_HOST }} \
+            --set jenkins.image.repository=${{ env.IMAGE_OWNER }}/helpdesk-jenkins \
+            --set jenkins.image.tag=${{ github.sha }} \
             --wait --timeout 10m

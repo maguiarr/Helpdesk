@@ -1,0 +1,16 @@
+{
+  "name": "helpdesk-e2e",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for HelpDesk Pro",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:ui": "npx playwright test --ui",
+    "report": "npx playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "typescript": "~5.5.0",
+    "dotenv": "^16.4.0"
+  }
+}

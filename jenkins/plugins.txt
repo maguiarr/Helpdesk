@@ -1,0 +1,10 @@
+oic-auth
+role-strategy
+configuration-as-code
+git
+workflow-aggregator
+htmlpublisher
+nodejs
+job-dsl
+credentials
+credentials-binding

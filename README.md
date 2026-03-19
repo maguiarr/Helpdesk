@@ -11,6 +11,8 @@ graph LR
     BE --> DB[(PostgreSQL)]
     FE --> KC[Keycloak<br/>OIDC/PKCE]
     BE --> KC
+    JK[Jenkins<br/>E2E Tests] --> FE
+    JK --> KC
 ```
 
 | Component | Tech | Port |
@@ -19,6 +21,7 @@ graph LR
 | Backend | .NET 8 Web API | 8080 |
 | Database | PostgreSQL 16 | 5432 |
 | Auth | Keycloak 25 | 8180 (dev) / 8080 (container) |
+| Jenkins | Jenkins LTS + Playwright | 9090 (dev) / 8080 (container) |
 
 ## Prerequisites
 
@@ -27,6 +30,7 @@ graph LR
 - Node.js 20+ (for local frontend dev)
 - Helm 3.14+ (for OpenShift deploy)
 - `oc` CLI (for OpenShift deploy)
+- Playwright (installed automatically via `e2e/scripts/install-deps.sh`)
 
 ## Local Development
 
@@ -41,6 +45,19 @@ make logs
 make down
 ```
 
+### Running E2E Tests
+
+```bash
+# Run Playwright E2E tests against local docker-compose stack
+make test-e2e
+
+# Run tests in headed mode for debugging
+make test-e2e-headed
+
+# Open the last HTML report
+make test-e2e-report
+```
+
 Services will be available at:
 - **Frontend**: http://localhost:4200
 - **Backend API**: http://localhost:8080/swagger
@@ -52,6 +69,7 @@ Services will be available at:
 |----------|----------|-------|
 | employee1 | password123 | employee |
 | admin1 | password123 | employee, helpdesk-admin |
+| tester1 | password123 | helpdesk-tester |
 
 ## OpenShift Deployment
 
@@ -170,6 +188,17 @@ The app should be fully operational within a few minutes of the second deploy co
 │   ├── src/
 │   ├── nginx.conf
 │   └── Dockerfile
+├── e2e/                      # Playwright E2E tests
+│   ├── pages/                # Page Object Models
+│   ├── tests/                # Test specs (auth, employee, admin, navigation)
+│   ├── fixtures/             # Test data constants
+│   ├── scripts/              # CI helper scripts
+│   └── playwright.config.ts
+├── jenkins/                  # Jenkins CI configuration
+│   ├── Dockerfile            # Custom Jenkins image with Node.js + Playwright
+│   ├── plugins.txt           # Jenkins plugins
+│   ├── casc/                 # Jenkins Configuration as Code
+│   └── jobs/                 # Job DSL definitions
 ├── helm/                     # Helm chart for OpenShift
 │   ├── templates/
 │   ├── values.yaml
