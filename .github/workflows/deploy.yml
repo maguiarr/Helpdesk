@@ -94,4 +94,5 @@ jobs:
             --set backend.image.repository=${{ env.IMAGE_OWNER }}/helpdesk-backend \
             --set backend.keycloak.authority=https://${{ secrets.KEYCLOAK_HOST }}/realms/helpdesk \
             --set keycloakRoute.host=${{ secrets.KEYCLOAK_HOST }} \
+            --set frontend.route.host=${{ secrets.FRONTEND_HOST }} \
             --wait --timeout 10m
