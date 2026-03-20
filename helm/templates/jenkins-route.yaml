@@ -7,9 +7,6 @@ metadata:
     app.kubernetes.io/name: jenkins
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
-  {{- if .Values.jenkins.route.host }}
-  host: {{ .Values.jenkins.route.host }}
-  {{- end }}
   to:
     kind: Service
     name: {{ .Release.Name }}-jenkins
