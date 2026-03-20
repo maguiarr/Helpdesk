@@ -93,8 +93,6 @@
       "webOrigins": [
         "+"
       ],
-      "defaultClientScopes": ["openid", "profile", "email", "roles", "web-origins", "acr", "basic"],
-      "optionalClientScopes": ["address", "phone", "microprofile-jwt"]
     }
   ],
   "users": [
