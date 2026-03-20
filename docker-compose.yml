@@ -28,6 +28,8 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HTTP_PORT: 8180
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     ports:
       - "8180:8180"
     volumes:
@@ -84,8 +86,37 @@ services:
     networks:
       - helpdesk
 
+  jenkins:
+    build:
+      context: .
+      dockerfile: jenkins/Dockerfile
+    environment:
+      KEYCLOAK_URL: http://keycloak:8180
+      KEYCLOAK_BROWSER_URL: http://localhost:8180
+      JENKINS_OIDC_CLIENT_SECRET: jenkins-secret
+      DEFAULT_BASE_URL: http://frontend:8080
+      JENKINS_ADMIN_PASSWORD: admin
+    ports:
+      - "9090:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - ./jenkins/casc/jenkins.yaml:/var/jenkins_home/casc_configs/jenkins.yaml:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' 2>/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    networks:
+      - helpdesk
+
 volumes:
   pgdata:
+  jenkins_home:
 
 networks:
   helpdesk:

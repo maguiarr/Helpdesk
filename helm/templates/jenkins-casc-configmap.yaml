@@ -1,0 +1,139 @@
+{{- if .Values.jenkins.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-jenkins-casc
+  labels:
+    app.kubernetes.io/name: jenkins
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  jenkins.yaml: |
+    jenkins:
+      systemMessage: "HelpDesk Pro - Jenkins CI Server (configured via JCasC)"
+      numExecutors: 2
+      mode: NORMAL
+
+      securityRealm:
+        oic:
+          clientId: "{{ .Values.jenkins.keycloak.clientId }}"
+          clientSecret: "${JENKINS_OIDC_CLIENT_SECRET}"
+          serverConfiguration:
+            manual:
+              issuer: "https://{{ .Values.keycloakRoute.host }}/realms/helpdesk"
+              authorizationServerUrl: "https://{{ .Values.keycloakRoute.host }}/realms/helpdesk/protocol/openid-connect/auth"
+              tokenServerUrl: "https://{{ .Values.keycloakRoute.host }}/realms/helpdesk/protocol/openid-connect/token"
+              jwksServerUrl: "https://{{ .Values.keycloakRoute.host }}/realms/helpdesk/protocol/openid-connect/certs"
+              endSessionUrl: "https://{{ .Values.keycloakRoute.host }}/realms/helpdesk/protocol/openid-connect/logout"
+              userInfoServerUrl: "https://{{ .Values.keycloakRoute.host }}/realms/helpdesk/protocol/openid-connect/userinfo"
+              scopes: "openid email profile"
+          userNameField: "preferred_username"
+          fullNameFieldName: "name"
+          emailFieldName: "email"
+          groupsFieldName: "realm_roles"
+
+      authorizationStrategy:
+        roleBased:
+          roles:
+            global:
+              - name: "admin"
+                permissions:
+                  - "Overall/Administer"
+                entries:
+                  - group: "helpdesk-admin"
+              - name: "tester"
+                permissions:
+                  - "Overall/Read"
+                  - "Job/Build"
+                  - "Job/Read"
+                  - "Job/Workspace"
+                  - "Job/Cancel"
+                entries:
+                  - group: "helpdesk-tester"
+              - name: "readonly"
+                permissions:
+                  - "Overall/Read"
+                entries:
+                  - group: "authenticated"
+
+    tool:
+      nodejs:
+        installations:
+          - name: "NodeJS-20"
+            home: "/usr/bin"
+
+    credentials:
+      system:
+        domainCredentials:
+          - credentials:
+              - string:
+                  scope: GLOBAL
+                  id: "employee-username"
+                  secret: "${EMPLOYEE_USERNAME:-employee1}"
+                  description: "Employee test username"
+              - string:
+                  scope: GLOBAL
+                  id: "employee-password"
+                  secret: "${EMPLOYEE_PASSWORD:-password123}"
+                  description: "Employee test password"
+              - string:
+                  scope: GLOBAL
+                  id: "admin-username"
+                  secret: "${ADMIN_USERNAME:-admin1}"
+                  description: "Admin test username"
+              - string:
+                  scope: GLOBAL
+                  id: "admin-password"
+                  secret: "${ADMIN_PASSWORD:-password123}"
+                  description: "Admin test password"
+
+    jobs:
+      - script: |
+          job('Run-Playwright-Tests') {
+            description('Runs Playwright E2E tests against HelpDesk Pro')
+            parameters {
+              stringParam('BASE_URL', 'https://{{ .Values.frontend.route.host }}', 'Base URL of the application under test')
+              choiceParam('BROWSER_PROJECT', ['all', 'employee-chromium', 'employee-firefox', 'admin-chromium', 'admin-firefox'], 'Which browser project(s) to run')
+              stringParam('TEST_RETRIES', '1', 'Number of test retries')
+            }
+            scm {
+              git {
+                remote {
+                  url('https://github.com/maguiarr/Helpdesk.git')
+                }
+                branch('main')
+              }
+            }
+            wrappers {
+              credentialsBinding {
+                string('EMPLOYEE_USERNAME', 'employee-username')
+                string('EMPLOYEE_PASSWORD', 'employee-password')
+                string('ADMIN_USERNAME', 'admin-username')
+                string('ADMIN_PASSWORD', 'admin-password')
+              }
+            }
+            steps {
+              shell('''
+                cd e2e
+                chmod +x scripts/*.sh
+                export BASE_URL="${BASE_URL}"
+                export TEST_RETRIES="${TEST_RETRIES}"
+                export BROWSER_PROJECT="${BROWSER_PROJECT}"
+                ./scripts/ci-entrypoint.sh
+              ''')
+            }
+            publishers {
+              publishHtml {
+                report('e2e/playwright-report') {
+                  reportName('Playwright Report')
+                  allowMissing(true)
+                  keepAll(true)
+                  alwaysLinkToLastBuild(true)
+                }
+              }
+              archiveArtifacts {
+                pattern('e2e/test-results/**')
+                allowEmpty(true)
+              }
+            }
+          }
+{{- end }}

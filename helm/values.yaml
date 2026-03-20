@@ -97,3 +97,27 @@ keycloak:
     user: helpdesk
     password: helpdesk123
     database: helpdesk
+
+# -- Jenkins
+jenkins:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: maguiarr/helpdesk-jenkins
+    tag: latest
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  persistence:
+    size: 5Gi
+  route:
+    host: ""
+  adminPassword: ""  # Escape hatch password for local admin access; defaults to "admin" if empty
+  keycloak:
+    clientId: helpdesk-jenkins
+    clientSecret: jenkins-secret

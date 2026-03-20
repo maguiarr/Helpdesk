@@ -1,0 +1,22 @@
+{{- if .Values.jenkins.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ .Release.Name }}-jenkins
+  labels:
+    app.kubernetes.io/name: jenkins
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  {{- if .Values.jenkins.route.host }}
+  host: {{ .Values.jenkins.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ .Release.Name }}-jenkins
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}

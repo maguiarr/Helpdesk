@@ -1,7 +1,7 @@
 NAMESPACE ?= helpdesk-pro
 COMPOSE := docker compose
 
-.PHONY: up down logs deploy status routes
+.PHONY: up down logs deploy status routes test-e2e test-e2e-headed test-e2e-report
 
 up:
 	$(COMPOSE) up -d --build
@@ -30,3 +30,14 @@ status:
 
 routes:
 	@oc get routes -n $(NAMESPACE) -o custom-columns=NAME:.metadata.name,HOST:.spec.host,PATH:.spec.path
+
+test-e2e:
+	cd e2e && npm ci && npx playwright install --with-deps chromium firefox && \
+		BASE_URL=http://localhost:4200 npx playwright test
+
+test-e2e-headed:
+	cd e2e && npm ci && npx playwright install --with-deps chromium firefox && \
+		BASE_URL=http://localhost:4200 npx playwright test --headed
+
+test-e2e-report:
+	cd e2e && npx playwright show-report

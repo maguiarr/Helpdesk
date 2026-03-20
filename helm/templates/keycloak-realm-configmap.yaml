@@ -28,6 +28,11 @@ data:
             "name": "helpdesk-admin",
             "description": "Help desk administrator who can manage all tickets",
             "composite": false
+          },
+          {
+            "name": "helpdesk-tester",
+            "description": "Tester who can run Jenkins test jobs",
+            "composite": false
           }
         ]
       },
@@ -78,6 +83,25 @@ data:
           "protocol": "openid-connect",
           "secret": "backend-secret",
           "bearerOnly": true
+        },
+        {
+          "clientId": "helpdesk-jenkins",
+          "name": "HelpDesk Jenkins",
+          "enabled": true,
+          "publicClient": false,
+          "directAccessGrantsEnabled": false,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "serviceAccountsEnabled": false,
+          "protocol": "openid-connect",
+          "secret": "jenkins-secret",
+          "redirectUris": [
+            "http://localhost:9090/securityRealm/finishLogin",
+            "https://{{ .Values.jenkins.route.host }}/securityRealm/finishLogin"
+          ],
+          "webOrigins": [
+            "+"
+          ]
         }
       ],
       "users": [
@@ -116,6 +140,24 @@ data:
           "realmRoles": [
             "employee",
             "helpdesk-admin"
+          ]
+        },
+        {
+          "username": "tester1",
+          "email": "tester1@helpdesk.local",
+          "firstName": "Terry",
+          "lastName": "Tester",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "password123",
+              "temporary": false
+            }
+          ],
+          "realmRoles": [
+            "helpdesk-tester"
           ]
         }
       ],
