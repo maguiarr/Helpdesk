@@ -6,6 +6,9 @@ E2E_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$E2E_DIR"
 
+# Use pre-installed browsers from Docker image if available
+export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}
+
 echo "=== CI Entrypoint ==="
 
 # Step 1: Install dependencies
