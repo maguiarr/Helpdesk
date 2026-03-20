@@ -13,8 +13,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Playwright browser dependencies pinned to the project's version
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY e2e/package.json e2e/package-lock.json* /tmp/e2e/
 RUN cd /tmp/e2e && npm ci && npx playwright install --with-deps chromium firefox && rm -rf /tmp/e2e
+RUN chmod -R 755 /ms-playwright
 
 # Ensure npm cache is writable by arbitrary UIDs (OpenShift runs as non-root random UID)
 RUN mkdir -p /.npm && chmod -R 777 /.npm
