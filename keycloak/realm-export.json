@@ -91,7 +91,9 @@
       ],
       "webOrigins": [
         "+"
-      ]
+      ],
+      "defaultClientScopes": ["openid", "email", "profile", "roles"],
+      "optionalClientScopes": []
     }
   ],
   "users": [

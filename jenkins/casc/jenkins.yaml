@@ -8,14 +8,19 @@ jenkins:
     oic:
       clientId: "helpdesk-jenkins"
       clientSecret: "${JENKINS_OIDC_CLIENT_SECRET}"
-      wellKnownOpenIDConfigurationUrl: "${KEYCLOAK_URL}/realms/helpdesk/.well-known/openid-configuration"
+      serverConfiguration:
+        manual:
+          issuer: "${KEYCLOAK_BROWSER_URL}/realms/helpdesk"
+          authorizationServerUrl: "${KEYCLOAK_BROWSER_URL}/realms/helpdesk/protocol/openid-connect/auth"
+          tokenServerUrl: "${KEYCLOAK_URL}/realms/helpdesk/protocol/openid-connect/token"
+          jwksServerUrl: "${KEYCLOAK_URL}/realms/helpdesk/protocol/openid-connect/certs"
+          endSessionUrl: "${KEYCLOAK_BROWSER_URL}/realms/helpdesk/protocol/openid-connect/logout"
+          userInfoServerUrl: "${KEYCLOAK_URL}/realms/helpdesk/protocol/openid-connect/userinfo"
+          scopes: "openid email profile"
       userNameField: "preferred_username"
       fullNameFieldName: "name"
       emailFieldName: "email"
       groupsFieldName: "realm_roles"
-      escapeHatchEnabled: true
-      escapeHatchUsername: "admin"
-      escapeHatchSecret: "${JENKINS_ADMIN_PASSWORD:-admin}"
 
   authorizationStrategy:
     roleBased:

@@ -1,4 +1,4 @@
-oic-auth
+oic-auth:4.668.v653c6b_c6cb_f5
 role-strategy
 configuration-as-code
 git
