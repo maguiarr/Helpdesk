@@ -119,9 +119,6 @@ data:
               shell('''
                 cd e2e
                 chmod +x scripts/*.sh
-                export BASE_URL="${BASE_URL}"
-                export TEST_RETRIES="${TEST_RETRIES}"
-                export BROWSER_PROJECT="${BROWSER_PROJECT}"
                 ./scripts/ci-entrypoint.sh
               ''')
             }
