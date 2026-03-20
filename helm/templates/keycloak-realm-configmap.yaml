@@ -102,14 +102,6 @@ data:
           "webOrigins": [
             "+"
           ],
-          "defaultClientScopes": [
-            "web-origins",
-            "acr",
-            "roles",
-            "profile",
-            "basic",
-            "email"
-          ],
           "protocolMappers": [
             {
               "name": "realm_roles",
