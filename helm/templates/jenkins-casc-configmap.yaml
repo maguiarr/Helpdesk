@@ -13,6 +13,10 @@ data:
       numExecutors: 2
       mode: NORMAL
 
+      crumbIssuer:
+        standard:
+          excludeClientIPFromCrumb: true
+
       securityRealm:
         oic:
           clientId: "{{ .Values.jenkins.keycloak.clientId }}"

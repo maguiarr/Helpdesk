@@ -4,6 +4,10 @@ jenkins:
   mode: NORMAL
   labelString: ""
 
+  crumbIssuer:
+    standard:
+      excludeClientIPFromCrumb: true
+
   securityRealm:
     oic:
       clientId: "helpdesk-jenkins"

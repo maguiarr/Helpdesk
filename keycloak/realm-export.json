@@ -91,6 +91,30 @@
       ],
       "webOrigins": [
         "+"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "roles",
+        "profile",
+        "basic",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "realm_roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_roles",
+            "jsonType.label": "String"
+          }
+        }
       ]
     }
   ],
@@ -157,6 +181,14 @@
       "roles": [
         "employee",
         "helpdesk-admin"
+      ]
+    },
+    {
+      "client": "helpdesk-jenkins",
+      "roles": [
+        "employee",
+        "helpdesk-admin",
+        "helpdesk-tester"
       ]
     }
   ]
