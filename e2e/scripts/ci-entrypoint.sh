@@ -23,7 +23,7 @@ echo "--- Step 2: Health check against $HEALTH_URL ---"
 MAX_RETRIES=30
 RETRY_INTERVAL=1
 for i in $(seq 1 $MAX_RETRIES); do
-  if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+  if curl -skf "$HEALTH_URL" > /dev/null 2>&1; then
     echo "Backend is healthy!"
     break
   fi
