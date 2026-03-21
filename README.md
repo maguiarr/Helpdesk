@@ -154,7 +154,8 @@ After a build completes, click **Playwright HTML Report** in the build sidebar t
 | `KEYCLOAK_HOST` | Route hostname for Keycloak (bare hostname, no `https://`) |
 | `FRONTEND_HOST` | Route hostname for the frontend (bare hostname, no `https://`) |
 | `JENKINS_HOST` | Route hostname for Jenkins (bare hostname, no `https://`) |
-| `GHCR_DOCKERCONFIGJSON` | Base64-encoded Docker config for GHCR pull secret |
+| `CR_PAT` | GitHub Personal Access Token with `read:packages` scope — used to generate `GHCR_DOCKERCONFIGJSON` |
+| `GHCR_DOCKERCONFIGJSON` | Base64-encoded Docker config for GHCR pull secret (see below) |
 
 To generate `GHCR_DOCKERCONFIGJSON`, create a GitHub Personal Access Token with `read:packages` scope
 (**Settings → Developer settings → Personal access tokens → Tokens (classic)**), then run:
@@ -187,6 +188,27 @@ After code changes, simply push to `main`. The CI/CD pipeline will:
 1. Build three container images — backend, frontend, and Jenkins (tagged with commit SHA + `latest`)
 2. Push all images to GitHub Container Registry (GHCR)
 3. Deploy to OpenShift via Helm upgrade
+
+## Waking Up Scaled-Down Pods
+
+The Developer Sandbox scales pods to zero overnight. To bring them back up manually, follow this order:
+
+```bash
+# 1. PostgreSQL first — everything depends on it
+oc scale statefulset helpdesk-pro-postgresql --replicas=1
+oc wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql --timeout=60s
+
+# 2. Keycloak — needs PostgreSQL for its database
+oc scale deployment helpdesk-pro-keycloak --replicas=1
+oc wait --for=condition=ready pod -l app.kubernetes.io/name=keycloak --timeout=180s
+
+# 3. Backend, Frontend, and Jenkins — can start in parallel
+oc scale deployment helpdesk-pro-backend --replicas=1
+oc scale deployment helpdesk-pro-frontend --replicas=1
+oc scale deployment helpdesk-pro-jenkins --replicas=1
+```
+
+Alternatively, re-running the GitHub Actions workflow (`helm upgrade --wait`) wakes everything up automatically.
 
 ## Redeployment After Sandbox Reset
 

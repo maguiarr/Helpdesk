@@ -18,11 +18,11 @@ Sandbox Reset Recovery — steps:
   3. Update OPENSHIFT_TOKEN and OPENSHIFT_SERVER GitHub secrets
   4. Trigger first deploy (creates routes)
   5. Wait for first workflow to finish
-  6. Discover Keycloak route hostname
-  7. Update KEYCLOAK_HOST GitHub secret
-  8. Trigger second deploy (wires Keycloak URL)
+  6. Discover all route hostnames (Keycloak, Frontend, Jenkins)
+  7. Update KEYCLOAK_HOST, FRONTEND_HOST, and JENKINS_HOST GitHub secrets
+  8. Trigger second deploy (wires all hostnames)
   9. Wait for second workflow to finish
- 10. Verify pod health and print app URL
+ 10. Verify pod health and print app URLs
 ```
 
 ### Step 2 — Pause for manual login
@@ -72,17 +72,30 @@ echo "Watching run $RUN_ID..."
 gh run watch "$RUN_ID" --exit-status
 ```
 
-### Step 7 — Discover Keycloak route hostname
+### Step 7 — Discover all route hostnames
 
 ```bash
+echo "=== All Routes ==="
+oc get routes -n "$NAMESPACE" -o custom-columns=NAME:.metadata.name,HOST:.spec.host
+
 KEYCLOAK_HOST=$(oc get route -n "$NAMESPACE" --no-headers | grep keycloak | awk '{print $2}')
+FRONTEND_HOST=$(oc get route -n "$NAMESPACE" --no-headers | grep frontend | awk '{print $2}')
+JENKINS_HOST=$(oc get route -n "$NAMESPACE" --no-headers | grep jenkins | awk '{print $2}')
+
+echo ""
 echo "Keycloak host: $KEYCLOAK_HOST"
+echo "Frontend host: $FRONTEND_HOST"
+echo "Jenkins host:  $JENKINS_HOST"
 ```
 
-### Step 8 — Update KEYCLOAK_HOST secret
+Confirm all three hostnames look correct (bare hostnames, no `https://` prefix) before proceeding.
+
+### Step 8 — Update all host secrets
 
 ```bash
 gh secret set KEYCLOAK_HOST --body "$KEYCLOAK_HOST"
+gh secret set FRONTEND_HOST --body "$FRONTEND_HOST"
+gh secret set JENKINS_HOST --body "$JENKINS_HOST"
 ```
 
 ### Step 9 — Trigger second deploy
@@ -114,9 +127,16 @@ Print a summary like:
 ```
 Sandbox reset complete!
 
-App URL:    https://<frontend-route-host>
-Admin:      admin1 / password123
-Employee:   employee1 / password123
+Frontend:   https://<frontend-route-host>
+Jenkins:    https://<jenkins-route-host>
+Keycloak:   https://<keycloak-route-host>
+
+Demo Users:
+  Admin:      admin1 / password123
+  Employee:   employee1 / password123
+  Tester:     tester1 / password123
 ```
 
-Extract the frontend route host from the `oc get routes` output (the route named `helpdesk-frontend` or similar).
+Extract the route hosts from the `oc get routes` output (routes named `helpdesk-pro-frontend`, `helpdesk-pro-jenkins`, `helpdesk-pro-keycloak`).
+
+> **If Jenkins can't authenticate after reset:** Keycloak imports the realm only once (on first boot). If the Jenkins OIDC client wasn't in the realm when Keycloak first started, it won't be recognized. See `docs/Deployment_troubleshooting.md` (issue #8) for the database reset procedure.
