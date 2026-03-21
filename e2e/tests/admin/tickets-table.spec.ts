@@ -15,6 +15,7 @@ test.describe('Tickets Table', () => {
 
   test('table has correct columns', async ({ page }) => {
     const headers = page.locator('th.mat-mdc-header-cell');
+    await expect(headers.first()).toBeVisible();
     const headerTexts = await headers.allTextContents();
     const expectedColumns = ['Title', 'Submitted By', 'Priority', 'Status', 'Assigned To', 'Created', 'Actions'];
     for (const col of expectedColumns) {
