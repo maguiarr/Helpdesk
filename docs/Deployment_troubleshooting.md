@@ -273,6 +273,27 @@ Playwright supports comma-separated reporters. The `list` reporter streams pass/
 
 ---
 
+### 19. Playwright HTML Report Blocked by Jenkins CSP (RESOLVED)
+
+Clicking the "Playwright Report" link in Jenkins showed a blank page. Browser console logged:
+
+```
+Applying inline style violates the following Content Security Policy directive 'style-src 'self''
+Blocked script execution in '...' because the document's frame is sandboxed and the 'allow-scripts' permission is not set
+```
+
+**Root cause:** Jenkins applies a restrictive default Content Security Policy to archived build artifacts: `sandbox; default-src 'none'; img-src 'self'; style-src 'self';`. Playwright's HTML report uses inline `<style>` tags and `<script>` blocks, which are blocked by this policy.
+
+**Fix:** Added the `hudson.model.DirectoryBrowserSupport.CSP` system property to `JAVA_OPTS` in `jenkins/Dockerfile` (local) and `helm/templates/jenkins-deployment.yaml` (OpenShift):
+
+```
+-Dhudson.model.DirectoryBrowserSupport.CSP="sandbox allow-scripts allow-same-origin; default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;"
+```
+
+This is a JVM system property so it requires a Jenkins restart (pod redeploy) to take effect — it cannot be changed at runtime via CasC or the UI.
+
+---
+
 ## Architecture
 
 ### Custom Templates (replaced Bitnami subcharts)
