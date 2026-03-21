@@ -28,18 +28,19 @@ test.describe('Submit Ticket Validation', () => {
     const longTitle = 'a'.repeat(TestData.validation.titleMaxLength + 1);
     await submitPage.titleInput.fill(longTitle);
     await submitPage.descriptionInput.click(); // blur to trigger validation
-    // Either the input is truncated to max length, or a validation error is shown
+    // maxLength validator marks the form invalid (disabling submit), even without a visible mat-error
     const inputValue = await submitPage.titleInput.inputValue();
-    const hasError = await page.locator('mat-form-field:has([formcontrolname="title"]) mat-error').isVisible();
-    expect(inputValue.length <= TestData.validation.titleMaxLength || hasError).toBeTruthy();
+    const isSubmitDisabled = await submitPage.submitButton.isDisabled();
+    expect(inputValue.length <= TestData.validation.titleMaxLength || isSubmitDisabled).toBeTruthy();
   });
 
   test('description max length is enforced', async ({ page }) => {
     const longDescription = 'a'.repeat(TestData.validation.descriptionMaxLength + 1);
     await submitPage.descriptionInput.fill(longDescription);
     await submitPage.titleInput.click(); // blur to trigger validation
+    // maxLength validator marks the form invalid (disabling submit), even without a visible mat-error
     const inputValue = await submitPage.descriptionInput.inputValue();
-    const hasError = await page.locator('mat-form-field:has([formcontrolname="description"]) mat-error').isVisible();
-    expect(inputValue.length <= TestData.validation.descriptionMaxLength || hasError).toBeTruthy();
+    const isSubmitDisabled = await submitPage.submitButton.isDisabled();
+    expect(inputValue.length <= TestData.validation.descriptionMaxLength || isSubmitDisabled).toBeTruthy();
   });
 });

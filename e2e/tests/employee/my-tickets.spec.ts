@@ -10,9 +10,8 @@ test.describe('My Tickets', () => {
   });
 
   test('table or empty state is displayed', async ({ page }) => {
-    const hasTable = await submitPage.myTicketsTable.isVisible();
-    const hasEmptyState = await submitPage.emptyState.isVisible();
-    expect(hasTable || hasEmptyState).toBeTruthy();
+    // Wait for the async ticket load to complete — either the table or empty state will render
+    await expect(submitPage.myTicketsTable.or(submitPage.emptyState)).toBeVisible();
   });
 
   test('my tickets table shows correct columns', async ({ page }) => {
