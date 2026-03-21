@@ -96,7 +96,7 @@ data:
             description('Runs Playwright E2E tests against HelpDesk Pro')
             parameters {
               stringParam('BASE_URL', 'https://{{ .Values.frontend.route.host }}', 'Base URL of the application under test')
-              choiceParam('BROWSER_PROJECT', ['all', 'employee-chromium', 'employee-firefox', 'admin-chromium', 'admin-firefox'], 'Which browser project(s) to run')
+              choiceParam('BROWSER_PROJECT', ['chromium', 'all', 'firefox', 'employee-chromium', 'employee-firefox', 'admin-chromium', 'admin-firefox'], 'Which browser project(s) to run. WARNING: Firefox/All will OOMKill the pod on Sandbox (2GiB quota)')
               stringParam('TEST_RETRIES', '1', 'Number of test retries')
             }
             scm {

@@ -23,7 +23,18 @@ done
 CMD=(npx playwright test)
 
 if [[ "$BROWSER_PROJECT" == "all" ]]; then
+  echo "⚠️  WARNING: Running all browsers (Chromium + Firefox) requires >1Gi pod memory."
+  echo "⚠️  On OpenShift Sandbox (2GiB namespace quota), this WILL OOMKill the Jenkins pod."
+  echo "⚠️  Use 'chromium' instead if running on a Sandbox environment."
   CMD+=(--project=employee-chromium --project=employee-firefox --project=admin-chromium --project=admin-firefox)
+elif [[ "$BROWSER_PROJECT" == "chromium" ]]; then
+  CMD+=(--project=employee-chromium --project=admin-chromium)
+elif [[ "$BROWSER_PROJECT" == "firefox" ]]; then
+  echo "⚠️  WARNING: Firefox requires >1Gi pod memory. On OpenShift Sandbox, this WILL OOMKill the Jenkins pod."
+  CMD+=(--project=employee-firefox --project=admin-firefox)
+elif [[ "$BROWSER_PROJECT" == *firefox* ]]; then
+  echo "⚠️  WARNING: Firefox requires >1Gi pod memory. On OpenShift Sandbox, this WILL OOMKill the Jenkins pod."
+  CMD+=(--project="$BROWSER_PROJECT")
 else
   CMD+=(--project="$BROWSER_PROJECT")
 fi

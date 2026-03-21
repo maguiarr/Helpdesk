@@ -60,7 +60,7 @@ export TEST_REPORTER="list,html"
 export TEST_WORKERS=1  # Serialize browser launches to stay within 1Gi pod memory limit
 export NODE_OPTIONS="--max-old-space-size=256"  # Cap Node.js heap for Playwright
 export TEST_RETRIES="${TEST_RETRIES:-1}"
-export BROWSER_PROJECT="${BROWSER_PROJECT:-all}"
+export BROWSER_PROJECT="${BROWSER_PROJECT:-chromium}"  # Default to Chromium-only (Firefox needs >1Gi, exceeds Sandbox quota)
 set +e
 bash "$SCRIPT_DIR/run-tests.sh"
 TEST_EXIT_CODE=$?
