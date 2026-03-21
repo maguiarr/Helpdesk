@@ -82,6 +82,8 @@ spec:
               mountPath: /var/jenkins_home
             - name: casc-config
               mountPath: /var/jenkins_home/casc_configs
+            - name: dshm
+              mountPath: /dev/shm
       volumes:
         - name: jenkins-home
           persistentVolumeClaim:
@@ -89,4 +91,8 @@ spec:
         - name: casc-config
           configMap:
             name: {{ .Release.Name }}-jenkins-casc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
 {{- end }}
