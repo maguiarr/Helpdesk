@@ -45,6 +45,7 @@ export BASE_URL
 
 # Step 4: Run tests
 echo "--- Step 4: Running Playwright tests ---"
+export MOZ_DISABLE_CONTENT_SANDBOX=1  # Firefox sandbox needs clone(CLONE_NEWUSER), blocked by OpenShift drop:ALL
 export TEST_REPORTER="list,html"
 export TEST_RETRIES="${TEST_RETRIES:-1}"
 export BROWSER_PROJECT="${BROWSER_PROJECT:-all}"

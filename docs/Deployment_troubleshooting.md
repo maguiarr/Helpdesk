@@ -294,6 +294,107 @@ This is a JVM system property so it requires a Jenkins restart (pod redeploy) to
 
 ---
 
+### 20. Firefox Playwright Tests Fail Instantly on OpenShift (OPEN)
+
+Firefox-based Playwright tests fail in ~4–5ms while Chromium tests pass. The `setup-firefox` project crashes immediately when trying to launch the Firefox browser inside the Jenkins pod on OpenShift.
+
+**Symptoms:**
+- `[setup-firefox] › tests/auth.setup.ts:4:6 › authenticate as employee (5ms)` — instant failure
+- All Chromium projects (`setup-chromium`, `employee-chromium`, `admin-chromium`) pass without issues
+- Jenkins readiness probe intermittently fails: `Readiness probe failed: Get "http://10.128.6.48:8080/login": context deadline exceeded`
+- OpenShift Sandbox environment — 2 GiB namespace memory quota, 5 pods total
+
+**What was tried (3 commits, none resolved the issue):**
+
+**Attempt 1 — Fix Chromium-only test spec issues (commit `b2ae4f4`)**
+
+Fixed unrelated test failures in `my-tickets.spec.ts` and `submit-ticket-validation.spec.ts` (race conditions and missing mat-error elements). These fixes helped Chromium tests pass but were not Firefox-specific.
+
+**Attempt 2 — Browser-specific auth setup projects (commit `b48cb63`)**
+
+**Hypothesis:** The single `setup` project ran authentication using Chromium only. Firefox's stricter cookie/session handling meant the Chromium-captured storage state (Keycloak OIDC cookies) didn't work when Firefox tried to reuse it.
+
+**Changes:**
+- `e2e/playwright.config.ts` — Split the single `setup` project into `setup-chromium` (using `Desktop Chrome`) and `setup-firefox` (using `Desktop Firefox`). Each test project now depends on its matching setup project. Storage state files are browser-specific (`.auth/employee-chromium.json`, `.auth/employee-firefox.json`, etc.)
+- `e2e/tests/auth.setup.ts` — Derives browser name from `testInfo.project.name` and saves storage state to browser-specific paths
+
+**Result:** Did not fix the issue. The failure moved from the test projects to `setup-firefox` itself — Firefox can't even launch to perform authentication. This confirmed the problem is at the browser launch level, not session/cookie reuse.
+
+**Attempt 3 — Add `/dev/shm` tmpfs volume + fix install check (commit `a663dca`)**
+
+**Hypothesis:** Firefox requires `/dev/shm` (shared memory via tmpfs) for inter-process communication. The Jenkins deployment had no `/dev/shm` volume mount — only `jenkins-home` (PVC) and `casc-config` (ConfigMap). Without shared memory, Firefox crashes instantly at launch. Also considered increasing memory limits (512Mi → 1Gi requests, 1Gi → 2Gi limits) but reverted because the OpenShift Sandbox namespace quota is only 2 GiB total across all pods.
+
+**Changes:**
+- `helm/templates/jenkins-deployment.yaml` — Added `dshm` emptyDir volume (`medium: Memory`, `sizeLimit: 256Mi`) mounted at `/dev/shm`
+- `e2e/scripts/install-deps.sh` — Fixed browser existence check to verify both `chromium-*` AND `firefox-*` directories before skipping download (previously only checked Chromium)
+
+**Result:** Did not fix the issue. Firefox still fails at 5ms. The `/dev/shm` mount may be necessary but is not sufficient. Possible remaining causes:
+- Missing OS-level shared libraries for Firefox (the Docker image runs `--with-deps` at build time, but OpenShift's arbitrary UID may affect library loading)
+- Firefox binary incompatible with the container's glibc or other system libraries
+- OpenShift's `drop: ALL` capabilities restriction may block Firefox's sandbox/IPC mechanisms
+- The 1Gi pod memory limit (with 256Mi reserved for `/dev/shm`) may leave insufficient memory for Jenkins JVM + Firefox combined
+- Firefox may need specific environment variables (e.g., `MOZ_HEADLESS=1`, `DISPLAY`) not set in the Jenkins shell environment
+- The pre-installed Firefox version at `/ms-playwright` may not match the Playwright version installed by `npm ci` in the workspace
+
+**Current state of files:**
+- `e2e/playwright.config.ts` — Has `setup-chromium` and `setup-firefox` projects with browser-specific storage state
+- `e2e/tests/auth.setup.ts` — Derives browser from project name, saves to browser-specific auth files
+- `helm/templates/jenkins-deployment.yaml` — Has `/dev/shm` emptyDir volume mount (256Mi Memory-backed)
+- `helm/values.yaml` — Jenkins resources unchanged at 512Mi request / 1Gi limit (sandbox constraint)
+- `e2e/scripts/install-deps.sh` — Checks for both `chromium-*` and `firefox-*` before skipping download
+
+**Attempt 4 — Pod diagnostics (exec into Jenkins pod)**
+
+Exec'd into the Jenkins pod to run diagnostics. Results:
+
+- Firefox binary exists and is executable: `/ms-playwright/firefox-1509/firefox/firefox` (579984 bytes, mode 755) ✓
+- No missing shared libraries: `ldd ... | grep "not found"` returned nothing ✓
+- `/dev/shm` mounted correctly: 256Mi tmpfs at `/dev/shm` ✓
+- Browser version matches: Playwright expects firefox v1509, installed is firefox-1509 ✓
+- Memory limit confirmed: 1073741824 bytes (1 GiB) ✓
+- All capabilities are zero: `CapEff: 0000000000000000` (OpenShift drops everything)
+
+**Smoking gun:** Running the Firefox binary directly produced:
+```
+[1714] Sandbox: CanCreateUserNamespace() clone() failure: EPERM
+Mozilla Firefox 146.0.1
+```
+
+Firefox's content process sandbox requires `clone(CLONE_NEWUSER)` to create user namespaces for process isolation. OpenShift's security context (`drop: ALL` capabilities + restricted SCC) blocks this syscall entirely. The `--version` flag succeeds because it exits before spawning sandboxed content processes. When Playwright launches Firefox normally, the content processes fail to sandbox → Firefox crashes → 5ms test failure.
+
+**Root cause confirmed:** OpenShift's `capabilities.drop: ALL` prevents Firefox from creating user namespaces needed for its content sandbox.
+
+**Fix:** Set `MOZ_DISABLE_CONTENT_SANDBOX=1` environment variable before running tests. This tells Firefox to skip the content process sandbox entirely — safe in a container where the container runtime already provides isolation.
+
+**Changes:**
+- `e2e/scripts/ci-entrypoint.sh` — Added `export MOZ_DISABLE_CONTENT_SANDBOX=1` before the test execution step
+
+**Diagnostic commands used (for future reference):**
+```bash
+# Exec into Jenkins pod
+oc exec -it -n maguiarr-dev deploy/helpdesk-pro-jenkins -- bash
+
+# Check Firefox binary
+ls -la /ms-playwright/firefox-*/firefox/firefox
+
+# Check for missing shared libraries
+ldd /ms-playwright/firefox-*/firefox/firefox 2>&1 | grep "not found"
+
+# Verify /dev/shm mount
+df -h /dev/shm
+
+# Run Firefox directly to see sandbox errors
+/ms-playwright/firefox-*/firefox/firefox --headless --version 2>&1
+
+# Check capabilities
+cat /proc/self/status | grep -E "Cap|Mem"
+
+# Check memory cgroup limit
+cat /sys/fs/cgroup/memory.max 2>/dev/null
+```
+
+---
+
 ## Architecture
 
 ### Custom Templates (replaced Bitnami subcharts)
