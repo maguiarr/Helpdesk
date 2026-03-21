@@ -45,7 +45,7 @@ export BASE_URL
 
 # Step 4: Run tests
 echo "--- Step 4: Running Playwright tests ---"
-export TEST_REPORTER="html"
+export TEST_REPORTER="list,html"
 export TEST_RETRIES="${TEST_RETRIES:-1}"
 export BROWSER_PROJECT="${BROWSER_PROJECT:-all}"
 set +e
