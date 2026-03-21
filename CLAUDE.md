@@ -109,3 +109,7 @@ Realm `helpdesk` with two clients:
 Demo users: `employee1` / `admin1` (both password: `password123`). Roles: `employee`, `helpdesk-admin`.
 
 The realm config is imported automatically by the Keycloak container at startup (mounted via ConfigMap in Helm, volume mount in docker-compose).
+
+## Deployment History
+
+See `docs/Deployment_troubleshooting.md` for a full log of resolved deployment issues, root causes, recovery procedures, and diagnostic commands.

@@ -462,7 +462,7 @@ Firefox/All selections emit a warning to the Jenkins console:
 
 `helm/templates/jenkins-deployment.yaml` + `jenkins/Dockerfile`:
 ```
--Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m
+-Xmx384m -XX:MaxMetaspaceSize=150m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC
 ```
 
 `helm/templates/jenkins-deployment.yaml` — `/dev/shm` reduced:

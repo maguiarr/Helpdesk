@@ -97,20 +97,24 @@ BASE_URL=http://localhost:4200 npx playwright test
 
 ### Test Projects
 
-Playwright is configured with four projects that combine role and browser:
+Playwright is configured with six projects — two setup projects (one per browser) and four test projects:
 
-| Project | Role | Browser |
-|---------|------|---------|
-| employee-chromium | employee1 | Chromium |
-| employee-firefox | employee1 | Firefox |
-| admin-chromium | admin1 | Chromium |
-| admin-firefox | admin1 | Firefox |
+| Project | Role | Browser | Type |
+|---------|------|---------|------|
+| setup-chromium | both | Chromium | Auth setup |
+| setup-firefox | both | Firefox | Auth setup |
+| employee-chromium | employee1 | Chromium | Tests |
+| employee-firefox | employee1 | Firefox | Tests |
+| admin-chromium | admin1 | Chromium | Tests |
+| admin-firefox | admin1 | Firefox | Tests |
 
 Run a specific project:
 
 ```bash
 cd e2e && npx playwright test --project=admin-chromium
 ```
+
+> **OpenShift Sandbox note:** Firefox tests require >1Gi pod memory. On OpenShift Developer Sandbox (2GiB namespace quota), only Chromium tests can run. See [docs/Deployment_troubleshooting.md](docs/Deployment_troubleshooting.md) (issues #20–21).
 
 ## Jenkins (CI Server)
 
@@ -129,8 +133,8 @@ This parameterized job runs the Playwright E2E suite against the running applica
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `BASE_URL` | `http://frontend:8080` | Application URL the tests run against |
-| `BROWSER_PROJECT` | `all` | Which project(s) to run: `all`, `employee-chromium`, `employee-firefox`, `admin-chromium`, `admin-firefox` |
+| `BASE_URL` | Frontend route URL | Application URL the tests run against |
+| `BROWSER_PROJECT` | `chromium` | Which project(s) to run: `chromium`, `firefox`, `all`, or individual projects (e.g. `employee-chromium`). Firefox/All will OOMKill on Sandbox. |
 | `TEST_RETRIES` | `1` | Number of retries for flaky tests |
 
 After a build completes, click **Playwright HTML Report** in the build sidebar to view the interactive test report.
