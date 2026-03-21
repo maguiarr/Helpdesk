@@ -20,43 +20,49 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'setup',
+      name: 'setup-chromium',
       testMatch: /auth\.setup\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'setup-firefox',
+      testMatch: /auth\.setup\.ts/,
+      use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'employee-chromium',
       use: {
         ...devices['Desktop Chrome'],
-        storageState: '.auth/employee.json',
+        storageState: '.auth/employee-chromium.json',
       },
-      dependencies: ['setup'],
+      dependencies: ['setup-chromium'],
       testMatch: /\/(employee)\/.+\.spec\.ts$|\/(navigation|auth)\/.*\.employee\.spec\.ts$/,
     },
     {
       name: 'employee-firefox',
       use: {
         ...devices['Desktop Firefox'],
-        storageState: '.auth/employee.json',
+        storageState: '.auth/employee-firefox.json',
       },
-      dependencies: ['setup'],
+      dependencies: ['setup-firefox'],
       testMatch: /\/(employee)\/.+\.spec\.ts$|\/(navigation|auth)\/.*\.employee\.spec\.ts$/,
     },
     {
       name: 'admin-chromium',
       use: {
         ...devices['Desktop Chrome'],
-        storageState: '.auth/admin.json',
+        storageState: '.auth/admin-chromium.json',
       },
-      dependencies: ['setup'],
+      dependencies: ['setup-chromium'],
       testMatch: /\/(admin)\/.+\.spec\.ts$|\/(navigation|auth)\/.*\.admin\.spec\.ts$/,
     },
     {
       name: 'admin-firefox',
       use: {
         ...devices['Desktop Firefox'],
-        storageState: '.auth/admin.json',
+        storageState: '.auth/admin-firefox.json',
       },
-      dependencies: ['setup'],
+      dependencies: ['setup-firefox'],
       testMatch: /\/(admin)\/.+\.spec\.ts$|\/(navigation|auth)\/.*\.admin\.spec\.ts$/,
     },
   ],

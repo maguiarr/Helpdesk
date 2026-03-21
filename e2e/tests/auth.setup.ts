@@ -1,10 +1,10 @@
 import { test as setup } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
 
-const employeeFile = '.auth/employee.json';
-const adminFile = '.auth/admin.json';
+setup('authenticate as employee', async ({ page }, testInfo) => {
+  const browser = testInfo.project.name.replace('setup-', '');
+  const employeeFile = `.auth/employee-${browser}.json`;
 
-setup('authenticate as employee', async ({ page }) => {
   const loginPage = new LoginPage(page);
   const baseURL = process.env.BASE_URL || 'http://localhost:4200';
 
@@ -18,7 +18,10 @@ setup('authenticate as employee', async ({ page }) => {
   await page.context().storageState({ path: employeeFile });
 });
 
-setup('authenticate as admin', async ({ page }) => {
+setup('authenticate as admin', async ({ page }, testInfo) => {
+  const browser = testInfo.project.name.replace('setup-', '');
+  const adminFile = `.auth/admin-${browser}.json`;
+
   const loginPage = new LoginPage(page);
   const baseURL = process.env.BASE_URL || 'http://localhost:4200';
 
