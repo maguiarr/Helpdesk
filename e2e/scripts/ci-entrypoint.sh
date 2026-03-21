@@ -45,7 +45,17 @@ export BASE_URL
 
 # Step 4: Run tests
 echo "--- Step 4: Running Playwright tests ---"
-export MOZ_DISABLE_CONTENT_SANDBOX=1  # Firefox sandbox needs clone(CLONE_NEWUSER), blocked by OpenShift drop:ALL
+# Firefox on OpenShift: disable all sandbox layers (clone(CLONE_NEWUSER) blocked by drop:ALL + seccomp)
+export MOZ_DISABLE_CONTENT_SANDBOX=1
+export MOZ_DISABLE_GMP_SANDBOX=1
+export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1
+export MOZ_DISABLE_RDD_SANDBOX=1
+# Firefox needs writable HOME and fontconfig cache (OpenShift arbitrary UID has no home dir)
+export HOME=${HOME:-/tmp/firefox-home}
+mkdir -p "$HOME/.cache/fontconfig" "$HOME/.mozilla"
+export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_CONFIG_HOME="$HOME/.config"
+export FONTCONFIG_CACHE="$HOME/.cache/fontconfig"
 export TEST_REPORTER="list,html"
 export TEST_RETRIES="${TEST_RETRIES:-1}"
 export BROWSER_PROJECT="${BROWSER_PROJECT:-all}"

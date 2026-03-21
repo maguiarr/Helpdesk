@@ -18,8 +18,9 @@ COPY e2e/package.json e2e/package-lock.json* /tmp/e2e/
 RUN cd /tmp/e2e && npm ci && npx playwright install --with-deps chromium firefox && rm -rf /tmp/e2e
 RUN chmod -R 755 /ms-playwright
 
-# Ensure npm cache is writable by arbitrary UIDs (OpenShift runs as non-root random UID)
+# Ensure npm cache and fontconfig cache are writable by arbitrary UIDs (OpenShift runs as non-root random UID)
 RUN mkdir -p /.npm && chmod -R 777 /.npm
+RUN mkdir -p /tmp/firefox-home/.cache/fontconfig /tmp/firefox-home/.mozilla && chmod -R 777 /tmp/firefox-home
 
 # Install Jenkins plugins
 COPY jenkins/plugins.txt /usr/share/jenkins/ref/plugins.txt

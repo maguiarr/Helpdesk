@@ -294,7 +294,7 @@ This is a JVM system property so it requires a Jenkins restart (pod redeploy) to
 
 ---
 
-### 20. Firefox Playwright Tests Fail Instantly on OpenShift (OPEN)
+### 20. Firefox Playwright Tests Fail Instantly on OpenShift (RESOLVED)
 
 Firefox-based Playwright tests fail in ~4–5ms while Chromium tests pass. The `setup-firefox` project crashes immediately when trying to launch the Firefox browser inside the Jenkins pod on OpenShift.
 
@@ -304,7 +304,13 @@ Firefox-based Playwright tests fail in ~4–5ms while Chromium tests pass. The `
 - Jenkins readiness probe intermittently fails: `Readiness probe failed: Get "http://10.128.6.48:8080/login": context deadline exceeded`
 - OpenShift Sandbox environment — 2 GiB namespace memory quota, 5 pods total
 
-**What was tried (3 commits, none resolved the issue):**
+**Root cause (two-part):**
+
+1. **Seccomp + dropped capabilities block Firefox sandbox.** OpenShift's security context (`capabilities.drop: ALL`, Seccomp mode 2 BPF filter) blocks `clone(CLONE_NEWUSER)`, which Firefox's content process sandbox requires to create user namespaces. Running the Firefox binary in the pod confirmed: `Sandbox: CanCreateUserNamespace() clone() failure: EPERM`.
+
+2. **No writable HOME directory for fontconfig cache.** OpenShift runs containers as an arbitrary non-root UID (e.g., 1001940000) that has no home directory. Disabling the content sandbox alone lets Firefox start, but the Playwright juggler pipe connection hangs because fontconfig emits 16× "No writable cache directories" warnings and stalls during font enumeration. Firefox needs a writable `HOME` with fontconfig and Mozilla cache directories.
+
+**What was tried (5 attempts):**
 
 **Attempt 1 — Fix Chromium-only test spec issues (commit `b2ae4f4`)**
 
@@ -312,62 +318,49 @@ Fixed unrelated test failures in `my-tickets.spec.ts` and `submit-ticket-validat
 
 **Attempt 2 — Browser-specific auth setup projects (commit `b48cb63`)**
 
-**Hypothesis:** The single `setup` project ran authentication using Chromium only. Firefox's stricter cookie/session handling meant the Chromium-captured storage state (Keycloak OIDC cookies) didn't work when Firefox tried to reuse it.
-
-**Changes:**
-- `e2e/playwright.config.ts` — Split the single `setup` project into `setup-chromium` (using `Desktop Chrome`) and `setup-firefox` (using `Desktop Firefox`). Each test project now depends on its matching setup project. Storage state files are browser-specific (`.auth/employee-chromium.json`, `.auth/employee-firefox.json`, etc.)
-- `e2e/tests/auth.setup.ts` — Derives browser name from `testInfo.project.name` and saves storage state to browser-specific paths
-
-**Result:** Did not fix the issue. The failure moved from the test projects to `setup-firefox` itself — Firefox can't even launch to perform authentication. This confirmed the problem is at the browser launch level, not session/cookie reuse.
+Split the single `setup` project into `setup-chromium` and `setup-firefox` with browser-specific storage state files. Did not fix the issue — confirmed the problem is at browser launch level, not session/cookie reuse.
 
 **Attempt 3 — Add `/dev/shm` tmpfs volume + fix install check (commit `a663dca`)**
 
-**Hypothesis:** Firefox requires `/dev/shm` (shared memory via tmpfs) for inter-process communication. The Jenkins deployment had no `/dev/shm` volume mount — only `jenkins-home` (PVC) and `casc-config` (ConfigMap). Without shared memory, Firefox crashes instantly at launch. Also considered increasing memory limits (512Mi → 1Gi requests, 1Gi → 2Gi limits) but reverted because the OpenShift Sandbox namespace quota is only 2 GiB total across all pods.
+Added `dshm` emptyDir volume (`medium: Memory`, `sizeLimit: 256Mi`) mounted at `/dev/shm`. Fixed browser existence check in `install-deps.sh` to verify both `chromium-*` and `firefox-*` directories. Did not fix the issue — necessary but not sufficient.
 
-**Changes:**
-- `helm/templates/jenkins-deployment.yaml` — Added `dshm` emptyDir volume (`medium: Memory`, `sizeLimit: 256Mi`) mounted at `/dev/shm`
-- `e2e/scripts/install-deps.sh` — Fixed browser existence check to verify both `chromium-*` AND `firefox-*` directories before skipping download (previously only checked Chromium)
+**Attempt 4 — Pod diagnostics + `MOZ_DISABLE_CONTENT_SANDBOX=1`**
 
-**Result:** Did not fix the issue. Firefox still fails at 5ms. The `/dev/shm` mount may be necessary but is not sufficient. Possible remaining causes:
-- Missing OS-level shared libraries for Firefox (the Docker image runs `--with-deps` at build time, but OpenShift's arbitrary UID may affect library loading)
-- Firefox binary incompatible with the container's glibc or other system libraries
-- OpenShift's `drop: ALL` capabilities restriction may block Firefox's sandbox/IPC mechanisms
-- The 1Gi pod memory limit (with 256Mi reserved for `/dev/shm`) may leave insufficient memory for Jenkins JVM + Firefox combined
-- Firefox may need specific environment variables (e.g., `MOZ_HEADLESS=1`, `DISPLAY`) not set in the Jenkins shell environment
-- The pre-installed Firefox version at `/ms-playwright` may not match the Playwright version installed by `npm ci` in the workspace
+Exec'd into the Jenkins pod. Confirmed Firefox binary exists, no missing shared libraries, `/dev/shm` mounted, browser version matches. Discovered the `clone() EPERM` error. Added `MOZ_DISABLE_CONTENT_SANDBOX=1` to `ci-entrypoint.sh`. **Partial fix** — Firefox launched (headless mode message appeared) but Playwright's juggler pipe connection hung for 30s then got SIGKILL'd.
 
-**Current state of files:**
-- `e2e/playwright.config.ts` — Has `setup-chromium` and `setup-firefox` projects with browser-specific storage state
-- `e2e/tests/auth.setup.ts` — Derives browser from project name, saves to browser-specific auth files
-- `helm/templates/jenkins-deployment.yaml` — Has `/dev/shm` emptyDir volume mount (256Mi Memory-backed)
-- `helm/values.yaml` — Jenkins resources unchanged at 512Mi request / 1Gi limit (sandbox constraint)
-- `e2e/scripts/install-deps.sh` — Checks for both `chromium-*` and `firefox-*` before skipping download
+**Attempt 5 — Full sandbox disable + writable HOME + fontconfig cache (THE FIX)**
 
-**Attempt 4 — Pod diagnostics (exec into Jenkins pod)**
+Through interactive pod debugging, discovered that even with content sandbox disabled, Firefox hung during fontconfig initialization because the arbitrary UID has no writable home directory. Setting `HOME=/tmp/firefox-home` with pre-created cache directories, plus disabling all four Firefox sandbox layers, allowed Firefox to launch and connect to Playwright's juggler pipe successfully.
 
-Exec'd into the Jenkins pod to run diagnostics. Results:
+**Fix applied:**
 
-- Firefox binary exists and is executable: `/ms-playwright/firefox-1509/firefox/firefox` (579984 bytes, mode 755) ✓
-- No missing shared libraries: `ldd ... | grep "not found"` returned nothing ✓
-- `/dev/shm` mounted correctly: 256Mi tmpfs at `/dev/shm` ✓
-- Browser version matches: Playwright expects firefox v1509, installed is firefox-1509 ✓
-- Memory limit confirmed: 1073741824 bytes (1 GiB) ✓
-- All capabilities are zero: `CapEff: 0000000000000000` (OpenShift drops everything)
-
-**Smoking gun:** Running the Firefox binary directly produced:
-```
-[1714] Sandbox: CanCreateUserNamespace() clone() failure: EPERM
-Mozilla Firefox 146.0.1
+`jenkins/Dockerfile` — Pre-create writable `/tmp/firefox-home` directories at image build time:
+```dockerfile
+RUN mkdir -p /tmp/firefox-home/.cache/fontconfig /tmp/firefox-home/.mozilla && chmod -R 777 /tmp/firefox-home
 ```
 
-Firefox's content process sandbox requires `clone(CLONE_NEWUSER)` to create user namespaces for process isolation. OpenShift's security context (`drop: ALL` capabilities + restricted SCC) blocks this syscall entirely. The `--version` flag succeeds because it exits before spawning sandboxed content processes. When Playwright launches Firefox normally, the content processes fail to sandbox → Firefox crashes → 5ms test failure.
+`e2e/scripts/ci-entrypoint.sh` — Export all sandbox and HOME environment variables before test execution:
+```bash
+# Disable all Firefox sandbox layers (clone(CLONE_NEWUSER) blocked by OpenShift drop:ALL + seccomp)
+export MOZ_DISABLE_CONTENT_SANDBOX=1
+export MOZ_DISABLE_GMP_SANDBOX=1
+export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1
+export MOZ_DISABLE_RDD_SANDBOX=1
+# Writable HOME with fontconfig cache (OpenShift arbitrary UID has no home dir)
+export HOME=${HOME:-/tmp/firefox-home}
+mkdir -p "$HOME/.cache/fontconfig" "$HOME/.mozilla"
+export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_CONFIG_HOME="$HOME/.config"
+export FONTCONFIG_CACHE="$HOME/.cache/fontconfig"
+```
 
-**Root cause confirmed:** OpenShift's `capabilities.drop: ALL` prevents Firefox from creating user namespaces needed for its content sandbox.
+**Why all four `MOZ_DISABLE_*` vars are needed:**
+- `MOZ_DISABLE_CONTENT_SANDBOX` — Disables content process sandbox (the primary blocker)
+- `MOZ_DISABLE_GMP_SANDBOX` — Disables Gecko Media Plugin sandbox
+- `MOZ_DISABLE_SOCKET_PROCESS_SANDBOX` — Disables socket process sandbox
+- `MOZ_DISABLE_RDD_SANDBOX` — Disables Remote Data Decoder sandbox
 
-**Fix:** Set `MOZ_DISABLE_CONTENT_SANDBOX=1` environment variable before running tests. This tells Firefox to skip the content process sandbox entirely — safe in a container where the container runtime already provides isolation.
-
-**Changes:**
-- `e2e/scripts/ci-entrypoint.sh` — Added `export MOZ_DISABLE_CONTENT_SANDBOX=1` before the test execution step
+All four use `clone(CLONE_NEWUSER)` or similar restricted syscalls. Disabling them is safe inside a container where the container runtime already provides process isolation.
 
 **Diagnostic commands used (for future reference):**
 ```bash
@@ -386,11 +379,17 @@ df -h /dev/shm
 # Run Firefox directly to see sandbox errors
 /ms-playwright/firefox-*/firefox/firefox --headless --version 2>&1
 
-# Check capabilities
-cat /proc/self/status | grep -E "Cap|Mem"
+# Check capabilities and seccomp mode
+cat /proc/self/status | grep -E "Cap|Seccomp"
 
 # Check memory cgroup limit
 cat /sys/fs/cgroup/memory.max 2>/dev/null
+
+# Test Firefox launch with full fix applied
+HOME=/tmp/firefox-home MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
+MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1 \
+FONTCONFIG_CACHE=/tmp/firefox-home/.cache/fontconfig \
+node -e "const {firefox} = require('playwright'); (async () => { const b = await firefox.launch({headless:true}); console.log('OK'); await b.close(); })()"
 ```
 
 ---
