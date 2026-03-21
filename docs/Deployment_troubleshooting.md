@@ -212,6 +212,67 @@ This ensures the old pod is fully terminated before the new one starts, preventi
 
 ---
 
+### 15. JCasC `${VAR}` Substitution Eats Shell Variables (RESOLVED)
+
+The Jenkins Freestyle job shell step contained `export BASE_URL="${BASE_URL}"` and similar lines. The job ran but build parameters (BASE_URL, TEST_RETRIES, BROWSER_PROJECT) were always empty strings at runtime.
+
+**Root cause:** Jenkins Configuration as Code (JCasC) treats **every** `${VAR}` as a JCasC variable reference and resolves it at startup — not at shell runtime. Since those env vars don't exist when Jenkins boots, they resolve to empty strings. The shell step baked into the job config literally becomes `export BASE_URL=""`.
+
+**Fix:** Removed all redundant `export` lines from the shell step in `jenkins/casc/jenkins.yaml` and `helm/templates/jenkins-casc-configmap.yaml`. Jenkins Freestyle jobs automatically inject build parameters as environment variables — no manual export needed.
+
+**Key lesson:** Never use `${VAR}` syntax in JCasC YAML expecting it to survive to shell runtime. If you truly need literal `${VAR}` in a JCasC-managed script, escape it as `^${VAR}` (JCasC escape syntax).
+
+---
+
+### 16. Health Check Fails Through Nginx Proxy / TLS Route (RESOLVED)
+
+The CI entrypoint script checked app readiness by curling `${BASE_URL}/api/healthz`, which routes through the Angular frontend's nginx proxy and the OpenShift TLS route. This failed for two reasons: (1) the backend health endpoint is `/healthz`, not `/api/healthz`, and nginx proxies `/api/*` to the backend stripping the prefix; (2) OpenShift edge-terminated routes use TLS certs that curl doesn't trust by default.
+
+**Fix:** Added a `HEALTH_CHECK_URL` environment variable to the Jenkins deployment (`helm/templates/jenkins-deployment.yaml`) pointing directly to the backend's internal ClusterIP service:
+
+```yaml
+- name: HEALTH_CHECK_URL
+  value: "http://{{ .Release.Name }}-backend:8080/healthz"
+```
+
+The CI script (`e2e/scripts/ci-entrypoint.sh`) uses this URL for the health check with `curl -k` to bypass any certificate issues, bypassing both the frontend proxy and the external route entirely.
+
+---
+
+### 17. Slow Playwright Browser Install in CI (RESOLVED)
+
+Every Jenkins build ran `npx playwright install` which downloaded ~400 MB of browsers, adding several minutes to each build — even though the browsers were already baked into the Docker image.
+
+**Fix:** Added a pre-check in `e2e/scripts/install-deps.sh` that skips the browser download when `$PLAYWRIGHT_BROWSERS_PATH` is set and already contains browser directories:
+
+```bash
+if [ -n "$PLAYWRIGHT_BROWSERS_PATH" ] && [ -d "$PLAYWRIGHT_BROWSERS_PATH" ] && [ "$(ls -A "$PLAYWRIGHT_BROWSERS_PATH" 2>/dev/null)" ]; then
+    echo "Browsers already installed at $PLAYWRIGHT_BROWSERS_PATH, skipping download"
+else
+    npx playwright install
+fi
+```
+
+Also removed `--with-deps` from the install command since OS-level dependencies are installed at Docker build time and `--with-deps` tries to `su` root which fails under OpenShift's arbitrary UID.
+
+---
+
+### 18. No Real-Time Console Output with HTML Reporter (RESOLVED)
+
+Jenkins console output showed no test progress — only final results appeared after the entire suite completed.
+
+**Root cause:** The test reporter was set to `html` only, which buffers all output until the end to generate the HTML report file. No streaming output is sent to stdout.
+
+**Fix:** Changed `TEST_REPORTER` in `e2e/scripts/ci-entrypoint.sh` from `"html"` to `"list,html"`:
+
+```bash
+export TEST_REPORTER="list,html"
+```
+
+Playwright supports comma-separated reporters. The `list` reporter streams pass/fail results to stdout in real time, while `html` still generates the full report artifact. Both run simultaneously.
+
+---
+
 ## Architecture
 
 ### Custom Templates (replaced Bitnami subcharts)
