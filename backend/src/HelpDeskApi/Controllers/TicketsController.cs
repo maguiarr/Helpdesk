@@ -72,6 +72,14 @@ public class TicketsController : ControllerBase
         return Ok(ticket);
     }
 
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "helpdesk-admin")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _ticketService.DeleteTicketAsync(id);
+        return NoContent();
+    }
+
     [HttpGet("stats")]
     [Authorize(Roles = "helpdesk-admin")]
     public async Task<ActionResult<TicketStatsResponse>> GetStats()

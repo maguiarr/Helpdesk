@@ -48,6 +48,14 @@ public class TicketRepository : ITicketRepository
         return ticket;
     }
 
+    public async Task DeleteAsync(Guid id)
+    {
+        var ticket = await _context.Tickets.FindAsync(id)
+            ?? throw new KeyNotFoundException($"Ticket {id} not found");
+        _context.Tickets.Remove(ticket);
+        await _context.SaveChangesAsync();
+    }
+
     public async Task<Dictionary<TicketStatus, int>> GetStatusCountsAsync()
     {
         return await _context.Tickets

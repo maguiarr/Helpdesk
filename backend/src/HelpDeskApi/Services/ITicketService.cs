@@ -10,5 +10,6 @@ public interface ITicketService
     Task<TicketResponse> CreateTicketAsync(CreateTicketRequest request, string username, string email);
     Task<TicketResponse> AssignTicketAsync(Guid id, string assignedTo);
     Task<TicketResponse> UpdateTicketStatusAsync(Guid id, string status);
+    Task DeleteTicketAsync(Guid id);
     Task<TicketStatsResponse> GetStatsAsync();
 }

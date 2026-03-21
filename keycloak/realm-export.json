@@ -33,7 +33,7 @@
       "name": "HelpDesk Frontend",
       "enabled": true,
       "publicClient": true,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "protocol": "openid-connect",

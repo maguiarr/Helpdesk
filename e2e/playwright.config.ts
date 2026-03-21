@@ -8,6 +8,8 @@ const baseURL = process.env.BASE_URL || 'http://localhost:4200';
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: require.resolve('./global-setup'),
+  globalTeardown: require.resolve('./global-teardown'),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

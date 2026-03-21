@@ -9,5 +9,6 @@ public interface ITicketRepository
     Task<Ticket?> GetByIdAsync(Guid id);
     Task<Ticket> CreateAsync(Ticket ticket);
     Task<Ticket> UpdateAsync(Ticket ticket);
+    Task DeleteAsync(Guid id);
     Task<Dictionary<TicketStatus, int>> GetStatusCountsAsync();
 }

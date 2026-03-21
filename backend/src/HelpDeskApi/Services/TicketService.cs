@@ -71,6 +71,13 @@ public class TicketService : ITicketService
         return _mapper.Map<TicketResponse>(updated);
     }
 
+    public async Task DeleteTicketAsync(Guid id)
+    {
+        _ = await _repository.GetByIdAsync(id)
+            ?? throw new KeyNotFoundException($"Ticket {id} not found");
+        await _repository.DeleteAsync(id);
+    }
+
     public async Task<TicketStatsResponse> GetStatsAsync()
     {
         var counts = await _repository.GetStatusCountsAsync();
