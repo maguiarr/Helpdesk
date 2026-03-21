@@ -56,6 +56,8 @@ spec:
               value: "https://{{ .Values.keycloakRoute.host }}"
             - name: DEFAULT_BASE_URL
               value: "https://{{ .Values.frontend.route.host }}"
+            - name: HEALTH_CHECK_URL
+              value: "http://{{ .Release.Name }}-backend:8080/healthz"
             - name: JENKINS_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:

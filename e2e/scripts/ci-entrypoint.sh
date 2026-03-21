@@ -17,7 +17,7 @@ bash "$SCRIPT_DIR/install-deps.sh"
 
 # Step 2: Health check
 BASE_URL="${BASE_URL:-http://localhost:4200}"
-HEALTH_URL="${BASE_URL}/api/healthz"
+HEALTH_URL="${HEALTH_CHECK_URL:-${BASE_URL}/api/healthz}"
 echo "--- Step 2: Health check against $HEALTH_URL ---"
 
 MAX_RETRIES=30
