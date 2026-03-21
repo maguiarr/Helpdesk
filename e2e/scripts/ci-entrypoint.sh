@@ -50,8 +50,8 @@ export MOZ_DISABLE_CONTENT_SANDBOX=1
 export MOZ_DISABLE_GMP_SANDBOX=1
 export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1
 export MOZ_DISABLE_RDD_SANDBOX=1
-# Firefox needs writable HOME and fontconfig cache (OpenShift arbitrary UID has no home dir)
-export HOME=${HOME:-/tmp/firefox-home}
+# Firefox needs writable HOME and fontconfig cache (OpenShift arbitrary UID has HOME=/)
+export HOME=/tmp/firefox-home
 mkdir -p "$HOME/.cache/fontconfig" "$HOME/.mozilla"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
