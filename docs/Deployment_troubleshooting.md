@@ -392,6 +392,42 @@ FONTCONFIG_CACHE=/tmp/firefox-home/.cache/fontconfig \
 node -e "const {firefox} = require('playwright'); (async () => { const b = await firefox.launch({headless:true}); console.log('OK'); await b.close(); })()"
 ```
 
+**Gotcha — `HOME=/` not empty:** OpenShift sets `HOME=/` for arbitrary UIDs. Using `${HOME:-/tmp/firefox-home}` (default substitution) does NOT override it — the variable is set, just set to `/`. The `mkdir` then tries to create `/.cache` which fails with `Permission denied`. Must use unconditional `export HOME=/tmp/firefox-home`.
+
+---
+
+### 21. Jenkins Pod OOMKilled During Playwright Tests (RESOLVED)
+
+After fixing Firefox's sandbox and HOME issues (issue #20), Firefox actually launches — but the Jenkins pod gets OOMKilled running JVM + Chromium + Firefox in a 1Gi memory limit (768Mi usable after 256Mi `/dev/shm`).
+
+**Symptoms:**
+- 503 Service Unavailable on Jenkins route during test execution
+- Build console output cuts off mid-test
+- Pod restarts (visible via `oc get pods` showing `RESTARTS` count increasing)
+
+**Root cause:** Jenkins JVM with no `-Xmx` defaults to ~25% of container memory. Combined with Playwright launching Chromium and Firefox workers concurrently, peak memory exceeds the 1Gi container limit. The OOM killer terminates the entire pod, OpenShift returns 503 until the pod restarts.
+
+**Fix (two changes):**
+
+1. Cap JVM heap at 384Mi in `JAVA_OPTS`:
+```
+-Xmx384m
+```
+Added to `helm/templates/jenkins-deployment.yaml` and `jenkins/Dockerfile`.
+
+2. Serialize Playwright workers to 1 in `e2e/scripts/ci-entrypoint.sh`:
+```bash
+export TEST_WORKERS=1
+```
+This ensures only one browser runs at a time (Chromium setup → Chromium tests → Firefox setup → Firefox tests), preventing concurrent browser memory spikes.
+
+**Memory budget (1Gi pod):**
+- `/dev/shm` tmpfs: 256Mi
+- JVM heap (`-Xmx384m`): ~384Mi
+- Single browser process: ~200-300Mi
+- Kernel/overhead: ~60-100Mi
+- Total: ~900Mi–1040Mi (tight but viable with serialized execution)
+
 ---
 
 ## Architecture

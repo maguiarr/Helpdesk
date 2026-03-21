@@ -57,6 +57,7 @@ export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
 export FONTCONFIG_CACHE="$HOME/.cache/fontconfig"
 export TEST_REPORTER="list,html"
+export TEST_WORKERS=1  # Serialize browser launches to stay within 1Gi pod memory limit
 export TEST_RETRIES="${TEST_RETRIES:-1}"
 export BROWSER_PROJECT="${BROWSER_PROJECT:-all}"
 set +e
