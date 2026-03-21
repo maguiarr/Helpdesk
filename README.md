@@ -114,6 +114,12 @@ Run a specific project:
 cd e2e && npx playwright test --project=admin-chromium
 ```
 
+### Test Data Cleanup
+
+The test suite automatically cleans up after itself. `globalSetup` runs before all tests and `globalTeardown` runs after — both delete any tickets whose title starts with `E2E ` (the prefix used by all test-created tickets).
+
+This keeps the admin dashboard clean across repeated runs. Cleanup uses a direct Keycloak token grant (Resource Owner Password Credentials) with the `admin1` user to authenticate against the API. Failures in cleanup are logged but never fail the test run.
+
 > **OpenShift Sandbox note:** Firefox tests require >1Gi pod memory. On OpenShift Developer Sandbox (2GiB namespace quota), only Chromium tests can run. See [docs/Deployment_troubleshooting.md](docs/Deployment_troubleshooting.md) (issues #20–21).
 
 ## Jenkins (CI Server)

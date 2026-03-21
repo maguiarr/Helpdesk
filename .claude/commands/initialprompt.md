@@ -158,6 +158,7 @@ GET    /api/tickets             [Authorize(Roles="helpdesk-admin")]  → Get all
 PATCH  /api/tickets/{id}/assign [Authorize(Roles="helpdesk-admin")]  → Assign to me (extract admin's preferred_username from JWT, set as AssignedTo, change status to In Progress)
 PATCH  /api/tickets/{id}/resolve [Authorize(Roles="helpdesk-admin")] → Resolve ticket (set status to Resolved)
 GET    /api/tickets/stats       [Authorize(Roles="helpdesk-admin")]  → Dashboard stats (counts by status)
+DELETE /api/tickets/{id}        [Authorize(Roles="helpdesk-admin")]  → Delete ticket (used by E2E globalTeardown to clean up test data)
 ```
 
 
@@ -199,6 +200,7 @@ Both must share the same structure with the following:
 - **Realm name:** `helpdesk`
 - **Angular client:** `helpdesk-frontend`
   - Public client (no client secret), PKCE enabled (S256)
+  - `directAccessGrantsEnabled: true` — required for E2E globalSetup/globalTeardown to acquire admin tokens via Resource Owner Password Credentials grant
   - Valid redirect URIs:
     - Local: `http://localhost:4200/*`, `https://*`
     - Helm: `http://localhost:4200/*`, `https://*.apps.*.openshiftapps.com/*`
@@ -298,8 +300,10 @@ A parameterized freestyle job:
 - **Parameters:**
   - `BASE_URL` (string) — Application URL (default:
     `http://frontend:8080` locally, templated to frontend route on OpenShift)
-  - `BROWSER_PROJECT` (choice) — `all`, `employee-chromium`,
-    `employee-firefox`, `admin-chromium`, `admin-firefox`
+  - `BROWSER_PROJECT` (choice) — `chromium` (default), `firefox`, `all`,
+    `employee-chromium`, `employee-firefox`, `admin-chromium`, `admin-firefox`.
+    `chromium` and `firefox` are shorthands that select all projects for that browser.
+    Firefox/All will OOMKill the Jenkins pod on OpenShift Sandbox (2GiB quota).
   - `TEST_RETRIES` (string) — Number of retries (default: `1`)
 - **SCM:** Git, repo URL `https://github.com/<owner>/Helpdesk.git`,
   branch `main`
@@ -320,7 +324,10 @@ A parameterized freestyle job:
 ### Directory Structure
 ```
 e2e/
-├── playwright.config.ts       ← Test configuration
+├── playwright.config.ts       ← Test configuration (includes globalSetup + globalTeardown)
+├── global-setup.ts            ← Runs before all tests: deletes E2E-prefixed tickets
+├── global-teardown.ts         ← Runs after all tests: deletes E2E-prefixed tickets
+├── cleanup.ts                 ← Shared cleanup logic: ROPC token → GET tickets → DELETE E2E ones
 ├── package.json               ← Dependencies (@playwright/test, typescript, dotenv)
 ├── tsconfig.json
 ├── fixtures/
@@ -366,13 +373,18 @@ e2e/
 - **Local mode:** Multiple workers, no retries, list reporter
 - **Screenshots/Traces:** Captured only on first retry failure
 
-**5 Projects:**
-1. `setup` — Runs `auth.setup.ts` to pre-authenticate both demo users
-   and save session state to `.auth/employee.json` and `.auth/admin.json`
-2. `employee-chromium` — Chromium, employee auth state, depends on setup
-3. `employee-firefox` — Firefox, employee auth state, depends on setup
-4. `admin-chromium` — Chromium, admin auth state, depends on setup
-5. `admin-firefox` — Firefox, admin auth state, depends on setup
+**Global hooks:**
+- `globalSetup` — runs `cleanup.ts` before all tests to remove tickets from aborted prior runs
+- `globalTeardown` — runs `cleanup.ts` after all tests to remove all `E2E `-prefixed tickets
+- Cleanup acquires an admin token via ROPC grant (`helpdesk-frontend` client, `admin1` user), fetches all tickets, deletes those whose title starts with `E2E `. Errors are logged but never fail the run.
+
+**6 Projects:**
+1. `setup-chromium` — Runs `auth.setup.ts` using Chromium, saves sessions to `.auth/*-chromium.json`
+2. `setup-firefox` — Runs `auth.setup.ts` using Firefox, saves sessions to `.auth/*-firefox.json`
+3. `employee-chromium` — Chromium, employee auth state, depends on setup-chromium
+4. `employee-firefox` — Firefox, employee auth state, depends on setup-firefox
+5. `admin-chromium` — Chromium, admin auth state, depends on setup-chromium
+6. `admin-firefox` — Firefox, admin auth state, depends on setup-firefox
 
 **Test routing by path pattern:**
 - Employee projects run: `/employee/*.spec.ts`, `/auth/*employee.spec.ts`,
