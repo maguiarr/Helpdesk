@@ -346,8 +346,8 @@ export MOZ_DISABLE_CONTENT_SANDBOX=1
 export MOZ_DISABLE_GMP_SANDBOX=1
 export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1
 export MOZ_DISABLE_RDD_SANDBOX=1
-# Writable HOME with fontconfig cache (OpenShift arbitrary UID has no home dir)
-export HOME=${HOME:-/tmp/firefox-home}
+# Writable HOME with fontconfig cache (OpenShift arbitrary UID has HOME=/)
+export HOME=/tmp/firefox-home
 mkdir -p "$HOME/.cache/fontconfig" "$HOME/.mozilla"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -398,35 +398,85 @@ node -e "const {firefox} = require('playwright'); (async () => { const b = await
 
 ### 21. Jenkins Pod OOMKilled During Playwright Tests (RESOLVED)
 
-After fixing Firefox's sandbox and HOME issues (issue #20), Firefox actually launches — but the Jenkins pod gets OOMKilled running JVM + Chromium + Firefox in a 1Gi memory limit (768Mi usable after 256Mi `/dev/shm`).
+After fixing Firefox's sandbox and HOME issues (issue #20), Firefox actually launches — but the Jenkins pod gets OOMKilled. Running Jenkins JVM + a browser inside a 1Gi memory limit leaves no headroom for Firefox's ~200-300Mi memory footprint.
 
 **Symptoms:**
 - 503 Service Unavailable on Jenkins route during test execution
 - Build console output cuts off mid-test
 - Pod restarts (visible via `oc get pods` showing `RESTARTS` count increasing)
+- OpenShift namespace dashboard shows memory spiking to the 2 GiB quota ceiling
 
-**Root cause:** Jenkins JVM with no `-Xmx` defaults to ~25% of container memory. Combined with Playwright launching Chromium and Firefox workers concurrently, peak memory exceeds the 1Gi container limit. The OOM killer terminates the entire pod, OpenShift returns 503 until the pod restarts.
+**Root cause:** Jenkins JVM consumes ~412 MiB at idle (heap + metaspace + thread stacks + native memory). Adding a single Firefox process (~200-300 MiB) pushes the 1Gi pod over its cgroup memory limit. The OOM killer terminates the entire pod. The 2 GiB namespace quota prevents increasing the pod's memory limit — the other 4 pods (PostgreSQL, Keycloak, backend, frontend) already consume ~500-600 MiB.
 
-**Fix (two changes):**
+**What was tried:**
 
-1. Cap JVM heap at 384Mi in `JAVA_OPTS`:
+1. **`-Xmx384m`** — Only caps heap; JVM was still ~412 MiB at idle because metaspace, code cache, and thread stacks are unbounded
+2. **`-Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m`** — Aggressively caps all JVM memory pools
+3. **`/dev/shm` reduced from 256Mi to 64Mi** — Memory-backed tmpfs counts against cgroup limit even if not fully used; 64Mi is sufficient for browser IPC
+4. **`NODE_OPTIONS="--max-old-space-size=256"`** — Caps Node.js (Playwright) heap
+5. **`TEST_WORKERS=1`** — Serializes browser execution (one browser at a time)
+
+**Result:** Even with all caps applied, Firefox still OOMKills the pod. The arithmetic doesn't work:
+- JVM (capped): ~350-400 MiB minimum
+- `/dev/shm` tmpfs: 64 MiB
+- Node.js/Playwright: ~100-150 MiB
+- Firefox process: ~200-300 MiB
+- **Total: ~714-914 MiB** — right at the 1Gi edge, with no margin for spikes
+
+This is a **hard infrastructure constraint** — the OpenShift Developer Sandbox's 2 GiB namespace quota cannot be increased, and the Jenkins pod cannot be allocated more than ~1Gi without starving the other pods.
+
+**Fix — default to Chromium-only in CI:**
+
+The Firefox sandbox/HOME fix from issue #20 is correct — Firefox **works** when launched with the proper environment variables. It's purely a memory budget problem on Sandbox. The solution is to default to Chromium-only tests and make Firefox an opt-in for environments with more resources.
+
+**Changes:**
+
+`e2e/scripts/ci-entrypoint.sh` — Default `BROWSER_PROJECT` to `chromium`:
+```bash
+export BROWSER_PROJECT="${BROWSER_PROJECT:-chromium}"
 ```
--Xmx384m
-```
-Added to `helm/templates/jenkins-deployment.yaml` and `jenkins/Dockerfile`.
 
-2. Serialize Playwright workers to 1 in `e2e/scripts/ci-entrypoint.sh`:
+`e2e/scripts/run-tests.sh` — Added `chromium` and `firefox` shorthand values:
+```bash
+if [[ "$BROWSER_PROJECT" == "all" ]]; then
+  CMD+=(--project=employee-chromium --project=employee-firefox --project=admin-chromium --project=admin-firefox)
+elif [[ "$BROWSER_PROJECT" == "chromium" ]]; then
+  CMD+=(--project=employee-chromium --project=admin-chromium)
+elif [[ "$BROWSER_PROJECT" == "firefox" ]]; then
+  CMD+=(--project=employee-firefox --project=admin-firefox)
+else
+  CMD+=(--project="$BROWSER_PROJECT")
+fi
+```
+
+Firefox/All selections emit a warning to the Jenkins console:
+```
+⚠️  WARNING: Firefox requires >1Gi pod memory. On OpenShift Sandbox, this WILL OOMKill the Jenkins pod.
+```
+
+`jenkins/casc/jenkins.yaml` + `helm/templates/jenkins-casc-configmap.yaml` — Updated `BROWSER_PROJECT` choice parameter:
+- `chromium` is now the first (default) option in the dropdown
+- Description includes: `WARNING: Firefox/All will OOMKill the pod on Sandbox (2GiB quota)`
+
+**JVM memory tuning (kept for Chromium stability):**
+
+`helm/templates/jenkins-deployment.yaml` + `jenkins/Dockerfile`:
+```
+-Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m
+```
+
+`helm/templates/jenkins-deployment.yaml` — `/dev/shm` reduced:
+```yaml
+sizeLimit: 64Mi
+```
+
+`e2e/scripts/ci-entrypoint.sh`:
 ```bash
 export TEST_WORKERS=1
+export NODE_OPTIONS="--max-old-space-size=256"
 ```
-This ensures only one browser runs at a time (Chromium setup → Chromium tests → Firefox setup → Firefox tests), preventing concurrent browser memory spikes.
 
-**Memory budget (1Gi pod):**
-- `/dev/shm` tmpfs: 256Mi
-- JVM heap (`-Xmx384m`): ~384Mi
-- Single browser process: ~200-300Mi
-- Kernel/overhead: ~60-100Mi
-- Total: ~900Mi–1040Mi (tight but viable with serialized execution)
+**To run Firefox tests:** Use a cluster with ≥4 GiB namespace memory quota and set Jenkins pod limits to ≥2Gi. Select `firefox` or `all` from the Jenkins build parameter dropdown.
 
 ---
 
