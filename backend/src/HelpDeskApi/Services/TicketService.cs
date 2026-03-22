@@ -2,6 +2,7 @@ using AutoMapper;
 using HelpDeskApi.DTOs;
 using HelpDeskApi.Models;
 using HelpDeskApi.Repositories;
+using Microsoft.Extensions.Configuration;
 
 namespace HelpDeskApi.Services;
 
@@ -9,11 +10,13 @@ public class TicketService : ITicketService
 {
     private readonly ITicketRepository _repository;
     private readonly IMapper _mapper;
+    private readonly int _maxTicketsPerUser;
 
-    public TicketService(ITicketRepository repository, IMapper mapper)
+    public TicketService(ITicketRepository repository, IMapper mapper, IConfiguration configuration)
     {
         _repository = repository;
         _mapper = mapper;
+        _maxTicketsPerUser = configuration.GetValue<int>("TicketSettings:MaxTicketsPerUser", 50);
     }
 
     public async Task<IEnumerable<TicketResponse>> GetAllTicketsAsync()
@@ -36,6 +39,10 @@ public class TicketService : ITicketService
 
     public async Task<TicketResponse> CreateTicketAsync(CreateTicketRequest request, string username, string email)
     {
+        var existingTickets = await _repository.GetBySubmitterAsync(username);
+        if (existingTickets.Count() >= _maxTicketsPerUser)
+            throw new TicketLimitExceededException(_maxTicketsPerUser);
+
         var ticket = _mapper.Map<Ticket>(request);
         ticket.SubmittedBy = username;
         ticket.SubmittedByEmail = email;

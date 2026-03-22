@@ -30,6 +30,12 @@ public class ExceptionHandlingMiddleware
     {
         var problemDetails = exception switch
         {
+            Services.TicketLimitExceededException => new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Ticket Limit Reached",
+                Detail = exception.Message
+            },
             KeyNotFoundException => new ProblemDetails
             {
                 Status = StatusCodes.Status404NotFound,

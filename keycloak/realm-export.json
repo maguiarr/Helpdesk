@@ -165,6 +165,97 @@
       "realmRoles": [
         "helpdesk-tester"
       ]
+    },
+    {
+      "username": "employee2",
+      "email": "employee2@helpdesk.local",
+      "firstName": "Bob",
+      "lastName": "Martinez",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "username": "employee3",
+      "email": "employee3@helpdesk.local",
+      "firstName": "Carol",
+      "lastName": "Johnson",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "username": "employee4",
+      "email": "employee4@helpdesk.local",
+      "firstName": "Dana",
+      "lastName": "Williams",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "username": "employee5",
+      "email": "employee5@helpdesk.local",
+      "firstName": "Eli",
+      "lastName": "Thompson",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "username": "admin2",
+      "email": "admin2@helpdesk.local",
+      "firstName": "Sam",
+      "lastName": "Director",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee",
+        "helpdesk-admin"
+      ]
     }
   ],
   "scopeMappings": [

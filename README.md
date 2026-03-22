@@ -55,11 +55,20 @@ Services will be available at:
 
 ## Demo Users
 
+All accounts use password `password123`. Each person should use a different employee account to see ticket isolation in action.
+
 | Username | Password | Roles | Access |
 |----------|----------|-------|--------|
 | employee1 | password123 | employee | Submit and view own tickets |
+| employee2 | password123 | employee | Submit and view own tickets |
+| employee3 | password123 | employee | Submit and view own tickets |
+| employee4 | password123 | employee | Submit and view own tickets |
+| employee5 | password123 | employee | Submit and view own tickets |
 | admin1 | password123 | employee, helpdesk-admin | Manage all tickets + Jenkins admin |
+| admin2 | password123 | employee, helpdesk-admin | Manage all tickets + Jenkins admin |
 | tester1 | password123 | helpdesk-tester | Trigger Jenkins test jobs |
+
+> **Ticket limit:** Each user can create up to 50 tickets (configurable in `appsettings.json`). The database comes pre-seeded with 12 demo tickets across different users, priorities, and statuses.
 
 ## E2E Testing (Playwright)
 
