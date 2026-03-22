@@ -45,6 +45,8 @@ make logs
 make down
 ```
 
+> **No setup required:** `make up` builds all application images from local source — no GHCR account, Docker Hub login, or OpenShift access needed. Forking the repo and configuring GitHub Secrets is only relevant for the OpenShift CI/CD pipeline.
+
 Services will be available at:
 - **Frontend**: http://localhost:4200
 - **Backend API**: http://localhost:8080/swagger
@@ -52,6 +54,8 @@ Services will be available at:
 - **Jenkins**: http://localhost:9090 (login via Keycloak SSO)
 
 > **First boot:** Jenkins takes ~2 minutes to start while it loads plugins and applies configuration. Wait for the health check to pass (`docker compose logs -f jenkins`) before accessing the UI.
+
+> **Credentials:** The `admin`/`admin` Keycloak Admin credentials are for the master realm console (editing Keycloak configuration itself). They are entirely separate from the helpdesk demo users — use `admin1` / `password123` to log in to the helpdesk frontend and Jenkins.
 
 ## Demo Users
 
