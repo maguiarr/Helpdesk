@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **HelpDesk Pro** is a full-stack support ticket demo application built to demonstrate CI/CD pipelines with OpenShift. It is intentionally scoped as a teaching tool, not production software.
 
-**Stack:** Angular 17 (frontend) + .NET 8 Web API (backend) + PostgreSQL 16 + Keycloak 25 (OIDC/PKCE auth)
+**Stack:** Angular 17 (frontend) + .NET 8 Web API (backend) + PostgreSQL 16 + Keycloak 25 (OIDC/PKCE auth) + Jenkins (CI/E2E runner)
 
 ## Commands
 
 ### Local Development
 
 ```bash
-make up       # Start all services via docker-compose (postgres, keycloak, backend, frontend)
+make up       # Start all services via docker-compose (postgres, keycloak, backend, frontend, jenkins)
 make down     # Stop and remove all services
 make logs     # Tail logs from all services
 ```
@@ -22,6 +22,7 @@ Service URLs after `make up`:
 - Frontend: http://localhost:4200
 - Backend Swagger: http://localhost:8080/swagger
 - Keycloak admin: http://localhost:8180 (admin/admin)
+- Jenkins: http://localhost:9090
 
 ### Frontend
 
@@ -48,11 +49,14 @@ dotnet run --project src/HelpDeskApi   # Requires running postgres + keycloak
 make deploy NAMESPACE=your-ns   # Helm deploy to OpenShift
 make status                      # Check pods/services/routes
 make routes                      # List route hostnames
+make test-e2e                    # Run Playwright E2E tests (headless)
+make test-e2e-headed             # Run Playwright in UI mode
+make test-e2e-report             # Show Playwright HTML report
 ```
 
-The GitHub Actions workflow (`.github/workflows/deploy.yml`) builds and pushes images to GHCR on every push to `main`, then deploys via Helm.
+The GitHub Actions workflow (`.github/workflows/deploy.yml`) builds and pushes three images (backend, frontend, jenkins) to GHCR on every push to `main`, then deploys via Helm.
 
-**Required GitHub Secrets:** `OPENSHIFT_TOKEN`, `OPENSHIFT_SERVER`, `KEYCLOAK_HOST`, `GHCR_DOCKERCONFIGJSON`
+**Required GitHub Secrets:** `OPENSHIFT_TOKEN`, `OPENSHIFT_SERVER`, `OPENSHIFT_NAMESPACE`, `KEYCLOAK_HOST`, `FRONTEND_HOST`, `JENKINS_HOST`, `GHCR_DOCKERCONFIGJSON`
 
 ## Architecture
 
@@ -62,6 +66,9 @@ The GitHub Actions workflow (`.github/workflows/deploy.yml`) builds and pushes i
 Browser → Angular (nginx:8080) → /api proxy → .NET API (8080) → PostgreSQL
                 ↕
           Keycloak (OIDC/PKCE) — issues JWTs validated by backend
+
+Jenkins (9090) — CI/E2E runner, authenticated via Keycloak OIDC
+  └─ Runs Playwright tests against the frontend
 ```
 
 The frontend nginx config proxies `/api` to the backend, avoiding CORS issues in production. In development, Angular's proxy config (`proxy.conf.json`) handles this instead.
@@ -93,20 +100,48 @@ Layered architecture: Controller → Service → Repository → EF Core → Post
 
 ### Helm Charts (`helm/`)
 
-Deploys all four components. Key files:
-- `values.yaml` — All defaults (images, resources, routes, auth credentials)
-- `values.openshift.yaml` — OpenShift security context overrides (must be passed with `-f` on deploy)
-- Dependencies: `bitnami/postgresql` and `bitnami/keycloak` subchart
+Deploys all five components (frontend, backend, PostgreSQL, Keycloak, Jenkins). No subchart dependencies — all components are defined as direct templates.
 
-Templates generate: Deployments, Services, Routes (OpenShift), ConfigMaps (frontend runtime config, Keycloak realm), and Secrets (DB credentials, GHCR pull secret).
+Key files:
+- `values.yaml` — All defaults (images, resources, routes, auth credentials)
+- `values.openshift.yaml` — Placeholder for OpenShift overrides (currently comments only; security contexts in base templates are already OpenShift-compatible)
+- `Chart.yaml` — No `dependencies` block
+
+Templates generate: Deployments/StatefulSets, Services, Routes (OpenShift), ConfigMaps (frontend runtime config, nginx proxy, Keycloak realm, Jenkins CasC), Secrets (DB credentials, Jenkins OIDC, GHCR pull secret), and PVCs (PostgreSQL, Jenkins).
+
+### Jenkins (`jenkins/`)
+
+CI/E2E runner deployed alongside the app. Configured entirely via Jenkins Configuration as Code (JCasC).
+
+- `Dockerfile` — Custom Jenkins image with pre-installed plugins
+- `casc/jenkins.yaml` — JCasC config: Keycloak OIDC auth, role-based authorization, NodeJS-20 tool, `Run-Playwright-Tests` job
+- `jobs/playwright-tests.groovy` — Reference Groovy for the Playwright pipeline
+
+Authentication: Keycloak OIDC via `helpdesk-jenkins` client. Role mapping: `helpdesk-admin` → full admin, `helpdesk-tester` → build/read, `authenticated` → read-only.
+
+The Playwright job clones the repo, runs `e2e/scripts/ci-entrypoint.sh`, and publishes the HTML report.
+
+### E2E Tests (`e2e/`)
+
+Playwright-based end-to-end test suite. Covers auth flows, ticket submission, admin dashboard, navigation.
+
+- Run locally: `make test-e2e` (headless) or `make test-e2e-headed` (UI mode)
+- Run via Jenkins: `Run-Playwright-Tests` job (parameterized: browser, retries, base URL)
+- Reports: `make test-e2e-report` or Jenkins archived artifacts
 
 ### Keycloak (`keycloak/realm-export.json`)
 
-Realm `helpdesk` with two clients:
+Realm `helpdesk` with three clients:
 - `helpdesk-frontend` — Public, PKCE enabled
-- `helpdesk-backend` — Confidential (secret: `backend-secret`)
+- `helpdesk-backend` — Confidential, bearer-only (secret: `backend-secret`)
+- `helpdesk-jenkins` — Confidential, standard flow (secret: `jenkins-secret`)
 
-Demo users: `employee1` / `admin1` (both password: `password123`). Roles: `employee`, `helpdesk-admin`.
+Demo users (all password: `password123`):
+- `employee1` through `employee5` — Role: `employee`
+- `admin1`, `admin2` — Roles: `employee` + `helpdesk-admin`
+- `tester1` — Role: `helpdesk-tester`
+
+Roles: `employee`, `helpdesk-admin`, `helpdesk-tester`.
 
 The realm config is imported automatically by the Keycloak container at startup (mounted via ConfigMap in Helm, volume mount in docker-compose).
 
