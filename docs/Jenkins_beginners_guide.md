@@ -74,6 +74,18 @@
   - [Part 8 — Going Deeper](#part-8--going-deeper)
     - [In This Project](#in-this-project)
     - [Official Documentation](#official-documentation)
+  - [Part 9 — Three Alternative Ways to Run Tests with Jenkins](#part-9--three-alternative-ways-to-run-tests-with-jenkins)
+    - [9.1 Jenkinsfile / Pipeline-as-Code](#91-jenkinsfile--pipeline-as-code)
+    - [9.2 Docker / Kubernetes Container Agent](#92-docker--kubernetes-container-agent)
+    - [9.3 Webhook-Triggered Multibranch Pipeline](#93-webhook-triggered-multibranch-pipeline)
+  - [Part 10 — Selenium: An Alternative UI Test Tool](#part-10--selenium-an-alternative-ui-test-tool)
+    - [10.1 What is Selenium?](#101-what-is-selenium)
+    - [10.2 How Selenium Works in Practice](#102-how-selenium-works-in-practice)
+    - [10.3 Integrating Selenium with Jenkins](#103-integrating-selenium-with-jenkins)
+    - [10.4 Three Selenium Architectures for Azure DevOps + OpenShift](#104-three-selenium-architectures-for-azure-devops--openshift)
+      - [Architecture 1: Selenium on the Jenkins Agent](#architecture-1-selenium-on-the-jenkins-agent)
+      - [Architecture 2: Selenium Grid with Docker Containers on OpenShift](#architecture-2-selenium-grid-with-docker-containers-on-openshift)
+      - [Architecture 3: Selenium Grid 4 Native Kubernetes on OpenShift (Elastic)](#architecture-3-selenium-grid-4-native-kubernetes-on-openshift-elastic)
 
 ---
 
@@ -1199,3 +1211,619 @@ Here's the complete picture of how all the pieces fit together:
 - **Jenkins Configuration as Code (JCasC)**: https://www.jenkins.io/projects/jcasc/ — How JCasC works, schema reference, and examples.
 - **Jenkins Job DSL**: https://plugins.jenkins.io/job-dsl/ — The DSL plugin documentation and API reference for defining jobs in code.
 - **OpenID Connect (OIDC) Basics**: https://openid.net/developers/how-connect-works/ — Understanding the protocol Jenkins uses to authenticate with Keycloak.
+
+---
+
+## Part 9 — Three Alternative Ways to Run Tests with Jenkins
+
+The current setup uses a **freestyle job** defined in JCasC that clones the Git repository and runs a shell script. That pattern works well for a demo, but real-world Jenkins installations typically use one or more of these three approaches instead.
+
+> **Most common in practice**: approaches 9.1 (Jenkinsfile) and 9.3 (webhooks) are almost always used together — they are not really alternatives to each other. The team commits a `Jenkinsfile` to the repo, creates a Multibranch Pipeline job in Jenkins, and wires it to a webhook from their Git platform (Azure DevOps in an enterprise context). Every pull request triggers a test run automatically; merge is blocked until it passes. This is the standard in any actively developed project. Container agents (9.2) are also common, but usually layered on top: your `Jenkinsfile` declares `agent { docker { … } }` and you get both. The manual "click Build" model used in this project is typical only for demos, nightly scheduled jobs, or teams that have not yet automated their pipeline.
+
+### 9.1 Jenkinsfile / Pipeline-as-Code
+
+**The idea**: instead of defining the job in an external config file (like `jenkins/casc/jenkins.yaml`), you commit a file called `Jenkinsfile` directly to the root of the application repository. Jenkins reads it after cloning the code — the pipeline definition lives in the same repo as the code it tests.
+
+```
+YOUR REPOSITORY
+├── frontend/
+├── backend/
+├── e2e/
+├── Jenkinsfile          ← The entire pipeline definition lives HERE, in the repo
+└── ...
+```
+
+The `Jenkinsfile` uses Jenkins' **Declarative Pipeline** syntax — a Groovy-based DSL. Here is what this project's job would look like as a `Jenkinsfile`:
+
+```groovy
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'BASE_URL', defaultValue: 'https://app.example.com')
+        choice(name: 'BROWSER_PROJECT', choices: ['chromium', 'firefox', 'all'])
+    }
+
+    stages {
+        stage('Install Dependencies') {
+            steps {
+                dir('e2e') { sh 'npm ci' }
+            }
+        }
+        stage('Run Playwright Tests') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'employee-credentials',
+                                     usernameVariable: 'EMPLOYEE_USERNAME',
+                                     passwordVariable: 'EMPLOYEE_PASSWORD')
+                ]) {
+                    dir('e2e') { sh './scripts/ci-entrypoint.sh' }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            publishHTML(target: [reportDir: 'e2e/playwright-report', reportName: 'Playwright Report'])
+        }
+    }
+}
+```
+
+**Why this matters over the current freestyle approach:**
+
+| Aspect | Freestyle + JCasC (current) | Jenkinsfile Pipeline |
+|---|---|---|
+| **Where is the pipeline defined?** | `jenkins/casc/jenkins.yaml` (separate config repo or ConfigMap) | `Jenkinsfile` in the app repo itself |
+| **Code review** | Pipeline changes bypass Git PR review | Pipeline changes go through the same PR process as application code |
+| **Visibility** | Only Jenkins admins typically read the JCasC YAML | Every developer can read, understand, and propose changes |
+| **Automatic triggering** | Must be wired up manually | Multibranch Pipeline scans all branches automatically |
+
+> **Multibranch Pipeline variant**: if you create a _Multibranch Pipeline_ job type in Jenkins (instead of a regular pipeline job), Jenkins automatically scans every branch in the repository, finds the `Jenkinsfile` in each one, and creates a separate job per branch. Opening a pull request automatically provisions a dedicated test run for that branch — no manual configuration. This is the most common pattern in actively developed projects.
+
+---
+
+### 9.2 Docker / Kubernetes Container Agent
+
+**The idea**: instead of running test commands directly on the Jenkins server (which requires Node.js, Playwright, and browsers to be pre-installed in the Jenkins image), each build step runs inside a **fresh, isolated container** that is created at build time and destroyed afterwards.
+
+In the current project, Playwright and Chrome are baked into the Jenkins Docker image so they are available when the job runs. With container agents, the Jenkins image itself stays small and generic — the test container brings everything it needs.
+
+**There are always two pods in this model.** This is the most important thing to understand:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  POD 1 — Jenkins Controller  (permanent, always running)            │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  • Jenkins web UI and dashboard                               │  │
+│  │  • Job scheduler and build history                            │  │
+│  │  • Credential store (passwords, PATs, secrets)                │  │
+│  │  • No repo, no Node.js, no Playwright, no browsers            │  │
+│  │                                                               │  │
+│  │  Role: THE MANAGER — tells the worker what to do              │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                   │                                                 │
+│   1. Build triggers                                                 │
+│   2. "I need a worker pod"                                          │
+│   → Kubernetes plugin asks OpenShift to create Pod 2                │
+└───────────────────┼─────────────────────────────────────────────────┘
+                    │ OpenShift provisions Pod 2
+                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  POD 2 — Jenkins Agent  (ephemeral, lives only for this build)      │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  • Jenkins JNLP agent process  ◄── connects back to Pod 1     │  │
+│  │  • Git clone runs here         ← repo arrives at build time   │  │
+│  │  • e2e/scripts/ci-entrypoint.sh  ← scripts are part of repo   │  │
+│  │  • Node.js + Playwright + Chromium + Firefox                  │  │
+│  │                                                               │  │
+│  │  Role: THE WORKER — clones the repo, runs the scripts,        │  │
+│  │         launches browsers, executes tests                     │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│       │                                                             │
+│   Pod 2 sends results back to Pod 1                                 │
+│   OpenShift deletes Pod 2 when build ends — nothing left behind     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Where are the scripts?**
+
+They don't exist in Pod 2 until the build runs. Pod 2 starts as a blank container image (Node.js + Playwright + browsers, but no application code). The first thing the Jenkins agent process inside it does is clone the Git repository — the scripts (`ci-entrypoint.sh`, `run-tests.sh`, all the test files) materialise inside Pod 2's local workspace at that moment. Pod 1 never has a copy of the scripts. It just sends the `sh` command to Pod 2 over the JNLP connection, and Pod 2 executes it.
+
+**Compared to the current HelpDesk Pro project** (where there is only one pod and Jenkins runs everything itself):
+
+| | Current project (1 pod) | Container agent (2 pods) |
+|---|---|---|
+| **Pod 1 contains** | Jenkins + Node.js + Playwright + Chrome | Jenkins only |
+| **Pod 2 contains** | _(nothing — there is no Pod 2)_ | JNLP agent + cloned repo + Node.js + Playwright + Chrome |
+| **Where tests run** | Inside the Jenkins pod itself | Inside the agent pod |
+| **What happens after the build** | Jenkins pod keeps running | Agent pod is deleted |
+| **Environment isolation** | Previous run's state can linger | Always starts completely clean |
+
+**In a Declarative Pipeline, the Docker variant looks like this:**
+
+```groovy
+pipeline {
+    agent {
+        docker {
+            image 'mcr.microsoft.com/playwright:v1.42.0-jammy'  // Official Playwright image
+            args '--shm-size=1g'                                  // Shared memory for Chrome
+        }
+    }
+    stages {
+        stage('Run Tests') {
+            steps {
+                dir('e2e') { sh 'npm ci && ./scripts/ci-entrypoint.sh' }
+            }
+        }
+    }
+}
+```
+
+Jenkins starts the `playwright:v1.42.0-jammy` container, runs the tests inside it, then discards it. The next build gets a clean, identical environment.
+
+**On OpenShift, the equivalent uses the Kubernetes plugin:**
+
+```groovy
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                  - name: playwright
+                    image: mcr.microsoft.com/playwright:v1.42.0-jammy
+                    command: ["sleep", "infinity"]
+                    resources:
+                      requests:
+                        memory: "1Gi"
+            '''
+        }
+    }
+    stages {
+        stage('Run Tests') {
+            steps {
+                container('playwright') {
+                    sh 'cd e2e && npm ci && ./scripts/ci-entrypoint.sh'
+                }
+            }
+        }
+    }
+}
+```
+
+Jenkins asks OpenShift to provision a new Pod matching that spec, runs the tests inside it, and OpenShift deletes the Pod when done.
+
+**Key advantages:**
+- Test environment is always clean — if one run corrupts the Node modules cache or leaves browser state behind, the next run starts fresh
+- Jenkins image stays lean — you can update the test container image independently of Jenkins
+- Multiple different test suites can each declare their own container image with different dependencies
+
+> **Why the current project does not use this**: baking browsers into the Jenkins image is simpler for a demo and removes the overhead of pod provisioning on each build. For a production team running many builds in parallel, container agents are the preferred approach because clean isolation and lean Jenkins images outweigh the startup cost.
+
+---
+
+### 9.3 Webhook-Triggered Multibranch Pipeline
+
+**The idea**: instead of a developer clicking "Build with Parameters" in the Jenkins UI, Jenkins is triggered **automatically** whenever code is pushed to the repository. This transforms Jenkins from an on-demand tool into a fully automatic CI gate — tests run without any human action.
+
+**How webhooks work, end-to-end:**
+
+```
+DEVELOPER            GIT REPOSITORY / AZURE DEVOPS        JENKINS
+─────────            ─────────────────────────────        ───────
+writes code
+     │
+     │  git push / opens PR
+     ▼
+branch updated ────► ADO Service Hook fires ─────────────► Jenkins webhook endpoint
+                     (HTTP POST with branch name,          receives notification
+                      commit SHA, repo URL)                     │
+                                                                │  scans repo
+                                                                │  finds Jenkinsfile
+                                                                │  runs pipeline
+                                                                │
+                     ADO PR shows ✓ or ✗  ◄────────────── posts build status back
+                     (commit status API)                   (pass / fail)
+```
+
+**In Azure DevOps + OpenShift context**, the wiring works like this:
+
+1. **Azure DevOps** hosts the Git repository. You configure a **Service Hook** (ADO's term for a webhook) under Project Settings, pointed at Jenkins' URL at `/multibranch-webhook-trigger/`
+2. **Jenkins** exposes that endpoint via the _Multibranch Scan Webhook Trigger_ plugin
+3. When ADO fires the event, Jenkins scans the branches that changed and runs only those pipelines
+4. Jenkins posts the build result back to Azure DevOps via the ADO REST API or a Git _commit status_ plugin — the PR shows a green check or red cross directly on the pull request page
+
+**Trigger modes compared:**
+
+| Trigger | What Starts the Build | Typical Use Case |
+|---|---|---|
+| **Manual** (current project) | A person clicks "Build" | Demos, on-demand spot checks |
+| **Scheduled (cron)** | A timer — e.g., every night at 2 AM | Nightly regression suites |
+| **Webhook on push** | Every `git push` to any branch | Full CI — tests run on every commit |
+| **Webhook on PR** | Opening or updating a Pull Request | PR gates — build must pass before merge |
+
+> **In an Azure DevOps shop**: the most common production pattern is the PR gate. A developer opens a pull request in ADO; ADO fires a webhook to Jenkins; Jenkins runs the tests against the branch; Jenkins posts the result back to the PR. Merge is blocked until the Jenkins build passes. This is almost certainly the pattern your client is running in production — understanding how webhooks wire ADO to Jenkins is what makes you sound like you have done this before.
+
+---
+
+## Part 10 — Selenium: An Alternative UI Test Tool
+
+> **Context**: this project uses Playwright for UI test automation. Selenium is the older, more widely deployed alternative. Many organisations built large Selenium suites long before Playwright existed and are not in a position to rewrite them.
+
+### 10.1 What is Selenium?
+
+Selenium is a **browser automation framework** that has been the industry standard for UI testing since around 2008 — over a decade before Playwright was released. The core idea is the same: write code that controls a real browser, clicks buttons, fills forms, and checks that the right things appear on screen. The fundamental difference is _how_ that control happens at the protocol level.
+
+**Playwright talks to the browser directly.** It uses the Chrome DevTools Protocol (CDP) — a WebSocket connection built into Chrome that gives Playwright direct access to the browser engine. No intermediary.
+
+**Selenium goes through a driver.** Between your test code and the browser sits a separate executable called a _WebDriver_. For Chrome, this is `chromedriver`. For Firefox, it's `geckodriver`. Your code sends HTTP commands to the driver; the driver translates them into browser actions.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  SELENIUM ARCHITECTURE                                           │
+│                                                                  │
+│  Test Code  ──HTTP──►  ChromeDriver  ──DevTools──►  Chrome       │
+│  (Java/C#/             (separate       (browser                  │
+│   Python/JS)            process,        process)                 │
+│                         must version-                            │
+│                         match Chrome)                            │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│  PLAYWRIGHT ARCHITECTURE                                         │
+│                                                                  │
+│  Test Code  ──WebSocket──────────────────────────►  Chrome       │
+│  (JS/TS/               (CDP — direct connection,    (bundled,    │
+│   Python/Java)          no intermediary driver)      version-    │
+│                                                      controlled) │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+The driver-based model has one practical headache that Playwright avoids entirely: **the ChromeDriver version must exactly match the installed Chrome version**. When Chrome auto-updates on a CI server, tests silently break until someone manually updates `chromedriver`. Playwright sidesteps this by bundling its own browser builds — it always knows exactly which browser version it controls.
+
+**Language support is Selenium's biggest enterprise advantage:**
+
+| Framework | Primary Languages | Common In |
+|---|---|---|
+| **Selenium** | Java, Python, C#, JavaScript, Ruby | .NET/Java enterprise shops, large legacy test suites |
+| **Playwright** | JavaScript/TypeScript (primary); Python, Java, .NET also available | Modern web projects, Node.js teams |
+
+If a client has a large Java or C# team, a Selenium suite in the matching language is far more natural than migrating everyone to Playwright's JavaScript API. This is the most common reason enterprise organisations stick with Selenium.
+
+---
+
+### 10.2 How Selenium Works in Practice
+
+A Selenium test in Java follows this pattern:
+
+```java
+// 1. Create a driver — this launches a real Chrome browser
+WebDriver driver = new ChromeDriver();
+driver.get("https://your-app.example.com");
+
+// 2. Find elements and interact with them
+WebElement usernameField = driver.findElement(By.id("username"));
+usernameField.sendKeys("employee1");
+
+WebElement passwordField = driver.findElement(By.id("password"));
+passwordField.sendKeys("password123");
+
+driver.findElement(By.id("kc-login")).click();
+
+// 3. Assert the result
+WebElement heading = driver.findElement(By.cssSelector("h1"));
+assertEquals("My Tickets", heading.getText());
+
+// 4. Always close the browser when done
+driver.quit();
+```
+
+The interaction vocabulary (`findElement` → `sendKeys` / `click`) maps directly to what you already know from Playwright (`locator()` → `fill()` / `click()`). The structural difference is that Selenium's `findElement` **returns immediately** — it queries the current DOM snapshot at that instant. It does not wait for the element to appear or become interactive.
+
+**This is why explicit waits are mandatory in Selenium**, and why their absence is the single biggest source of flaky Selenium tests:
+
+```java
+// FRAGILE — element might not exist yet if the page is still loading
+driver.findElement(By.id("ticket-list")).click();  // throws NoSuchElementException
+
+// CORRECT — wait up to 10 seconds for the element to become visible
+WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+WebElement ticketList = wait.until(
+    ExpectedConditions.visibilityOfElementLocated(By.id("ticket-list"))
+);
+ticketList.click();
+```
+
+> **Playwright does waits automatically.** When you call `page.locator('#ticket-list').click()` in Playwright, it polls the DOM for up to 30 seconds waiting for the element to be visible and stable before telling the browser to click. Forgetting `WebDriverWait` in Selenium — which many developers do — produces tests that pass on a fast developer machine and fail intermittently on a slower CI server. This is the most commonly cited frustration with Selenium in practice.
+
+**Selenium Grid** scales this model to parallel multi-browser execution by separating test execution from browser execution:
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  SELENIUM GRID                                                │
+│                                                               │
+│  Test Code ──► Grid Hub ──► Chrome Node Pod  (Machine / Pod)  │
+│                    │    ──► Firefox Node Pod (Machine / Pod)  │
+│                    │    ──► Chrome Node Pod  (Machine / Pod)  │
+│                                                               │
+│  Hub: receives session requests, routes to an available node  │
+│  Node: a machine or container with a browser + driver         │
+└───────────────────────────────────────────────────────────────┘
+```
+
+Your test connects to the Hub's URL using a `RemoteWebDriver` instead of a local driver — the Hub assigns the session to whichever Node has capacity:
+
+```java
+URL gridUrl = new URL("http://selenium-hub:4444/wd/hub");
+ChromeOptions options = new ChromeOptions();
+WebDriver driver = new RemoteWebDriver(gridUrl, options);
+// from here, the code is identical to local Selenium
+```
+
+This enables parallel cross-browser testing without installing multiple browsers on the same machine — each Node runs in its own container and can be scaled independently.
+
+---
+
+### 10.3 Integrating Selenium with Jenkins
+
+From Jenkins' perspective, running Selenium tests looks almost identical to running Playwright tests. Jenkins executes a shell command. The JCasC credential injection, the credentials-binding plugin, the Git clone step — all of it carries over unchanged.
+
+```
+Jenkins Job (Selenium version)
+│
+├── SCM Step: clone repository                        (identical to Playwright)
+│
+├── Credentials Binding: inject test user passwords   (identical pattern)
+│   └── EMPLOYEE_USERNAME, EMPLOYEE_PASSWORD, ADMIN_USERNAME, ADMIN_PASSWORD
+│
+├── Build Step: shell command
+│   ├── Playwright:  cd e2e && npx playwright test
+│   └── Selenium:    cd selenium-tests && mvn test -Dbase.url=$BASE_URL
+│                    (or: pytest tests/ for Python Selenium)
+│                    (or: dotnet test for C# Selenium (.NET / xUnit))
+│
+└── Post-Build: publish results
+    ├── Playwright:  publishHTML plugin (Playwright HTML report)
+    └── Selenium:    junit('target/surefire-reports/**/*.xml')
+                     Jenkins JUnit plugin reads the standard JUnit XML that Maven/pytest produce
+                     and renders pass/fail trends natively in the Jenkins UI
+```
+
+**The key differences in practice:**
+
+| Aspect | Playwright (current) | Selenium |
+|---|---|---|
+| **Test command** | `npx playwright test` | `mvn test` / `pytest` / `dotnet test` |
+| **Browser requirement** | Pre-installed in Jenkins image (or container agent) | ChromeDriver + Chrome in image, or connect to external Grid |
+| **Result format** | Playwright HTML report (htmlpublisher plugin) | JUnit XML (Jenkins JUnit plugin) |
+| **Parallel execution** | Playwright project config (`workers`) | Selenium Grid node pool |
+| **Wait strategy** | Automatic (built in) | Explicit `WebDriverWait` required in every test |
+| **Driver management** | None — Playwright bundles its browsers | ChromeDriver version must match Chrome version |
+
+Everything from Part 3 of this guide — JCasC credentials, the credentials-binding plugin, the job DSL structure — applies equally to Selenium. You swap the test runner command and the result publisher. The Jenkins scaffolding is the same.
+
+---
+
+### 10.4 Three Selenium Architectures for Azure DevOps + OpenShift
+
+> These three architectures are ordered from simplest to most scalable. All three run on OpenShift and integrate with Azure DevOps pipelines.
+
+---
+
+#### Architecture 1: Selenium on the Jenkins Agent
+
+**The simplest possible setup.** ChromeDriver and Google Chrome are installed directly in the Jenkins container image — exactly as Playwright browsers are installed in this project. Tests run on the same pod as Jenkins, no external infrastructure needed.
+
+```
+OpenShift Cluster
+┌──────────────────────────────────────────────────────────┐
+│  Jenkins Pod                                             │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  Jenkins agent process                             │  │
+│  │  + ChromeDriver (pre-installed)                    │  │
+│  │  + Chrome headless (pre-installed)                 │  │
+│  │  + test framework (Maven / pytest / dotnet)        │  │
+│  │                                                    │  │
+│  │  mvn test  →  ChromeDriver  →  Chrome              │  │
+│  │  (everything runs inside this one pod)             │  │
+│  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+         ▲
+         │  Azure DevOps triggers via JenkinsQueueJob task
+         │
+Azure DevOps Pipeline ── developer pushes to ADO repo ──► pipeline starts
+```
+
+**Azure DevOps integration:**
+
+Azure DevOps has a built-in **Jenkins service connection** under Project Settings → Service connections. Once configured with Jenkins' URL and credentials, an ADO pipeline can queue and wait on a Jenkins build:
+
+```yaml
+# azure-pipelines.yml
+- task: JenkinsQueueJob@2
+  inputs:
+    serverEndpoint: 'Jenkins-OpenShift'      # the service connection name
+    jobName: 'Run-Selenium-Tests'
+    captureConsole: true                     # streams Jenkins log into ADO pipeline output
+    captureJobParameters: true
+```
+
+This triggers the Jenkins job from within a step in the ADO pipeline, blocks until it finishes, and imports the console log — so the test output is visible in the ADO pipeline run without navigating to Jenkins.
+
+**When to use this architecture:**
+- Small test suite (under ~100 tests)
+- Single browser (Chrome only is fine)
+- Team without dedicated infrastructure budget
+- Migrating an existing project — lowest-friction starting point
+
+**Key limitation:** Chrome is memory-hungry (~500MB+). Tests run sequentially on one browser. A Chrome crash inside the pod can destabilise the Jenkins process, since they share the same pod.
+
+---
+
+#### Architecture 2: Selenium Grid with Docker Containers on OpenShift
+
+**The parallel testing setup.** A dedicated Selenium Grid runs as separate pods alongside Jenkins. Jenkins connects to the Grid's Hub via a `RemoteWebDriver` URL — it hands off browser management entirely to the Grid. The Jenkins pod itself stays lean.
+
+```
+OpenShift Cluster
+┌──────────────────────────────────────────────────────────────────────┐
+│                                                                      │
+│   Jenkins Pod                   Selenium Grid                        │
+│   ┌─────────────────┐           ┌─────────────────────────────────┐  │
+│   │                 │           │  Hub Pod                        │  │
+│   │  mvn test       │           │  routes sessions to nodes       │  │
+│   │  (RemoteDriver  │──── http ►│  http://selenium-hub:4444       │  │
+│   │   URL to Hub)   │           └────────────┬────────────────────┘  │
+│   └─────────────────┘                        │                       │
+│                                    ┌─────────┴──────────────────┐   │
+│                                    │  Node Pods                 │   │
+│                                    │  ┌──────────┐ ┌─────────┐  │   │
+│                                    │  │ Chrome   │ │ Firefox │  │   │
+│                                    │  │ Node x2  │ │ Node x1 │  │   │
+│                                    │  └──────────┘ └─────────┘  │   │
+│                                    └────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────┘
+         ▲
+         │  Azure DevOps JenkinsQueueJob task + PublishTestResults task
+```
+
+**Azure DevOps integration goes one step further** in this architecture. After the test run, the JUnit XML results Jenkins produces can be uploaded directly to **Azure Test Plans**, giving the client test-trend visibility inside ADO without navigating to Jenkins:
+
+```yaml
+# azure-pipelines.yml
+- task: JenkinsQueueJob@2
+  inputs:
+    serverEndpoint: 'Jenkins-OpenShift'
+    jobName: 'Run-Selenium-Tests'
+    captureConsole: true
+
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: '**/TEST-*.xml'             # downloaded from Jenkins artifacts
+    testRunTitle: 'Selenium Results - $(Build.BuildNumber)'
+    mergeTestResults: true
+```
+
+This gives a pass/fail trend graph, flaky test tracking, and test history living in the Azure DevOps portal — not just in Jenkins.
+
+**Typical resource allocation for the Grid pods:**
+
+| Pod | Replicas | Memory Request |
+|---|---|---|
+| Selenium Hub | 1 | 256 MB |
+| Chrome Node | 2 | 1 GB each |
+| Firefox Node | 1 | 1 GB |
+
+**When to use this architecture:**
+- Cross-browser testing required (Chrome + Firefox minimum)
+- Parallel execution needed to keep CI run time under 10 minutes
+- Team is comfortable with Docker and OpenShift
+- Suite is in the 100–500 test range
+
+**Key limitation:** Node pods run continuously even when no tests are executing, consuming cluster resources around the clock when idle. There is no auto-scaling in the classic Grid 3 model.
+
+---
+
+#### Architecture 3: Selenium Grid 4 Native Kubernetes on OpenShift (Elastic)
+
+**The cloud-native, elastic setup.** Selenium Grid 4 introduced native Kubernetes support with a fully decomposed architecture. Instead of a monolithic Hub with always-on Node pods, Grid 4 splits into specialised components, and **browser pods are provisioned on demand** — they exist only for the duration of a test session, then the pod is automatically deleted.
+
+```
+OpenShift Cluster
+┌────────────────────────────────────────────────────────────────────────┐
+│                                                                        │
+│   Jenkins Pod                                                          │
+│   ┌──────────────┐                                                     │
+│   │  mvn test    │                                                     │
+│   │  RemoteDriver│                                                     │
+│   │  URL ──────────────────────────────────────────────────────┐       │
+│   └──────────────┘                                             │       │
+│                                                                ▼       │
+│   ┌─────────────────────────────────────────────────────────────────┐  │
+│   │  Selenium Grid 4 (deployed via Helm chart)                      │  │
+│   │                                                                 │  │
+│   │  ┌──────────┐   ┌─────────────────┐   ┌───────────────────┐     │  │
+│   │  │ Router   │──►│  Distributor    │   │  Session Map      │     │  │
+│   │  │ (entry   │   │  (assigns       │   │  (tracks which    │     │  │
+│   │  │  point)  │   │   sessions to   │   │   test is on      │     │  │
+│   │  └──────────┘   │   nodes; spawns │   │   which node)     │     │  │
+│   │                 │   pods on demand│   └───────────────────┘     │  │
+│   │                 └────────┬────────┘                             │  │
+│   │                          │  creates pods when a session starts  │  │
+│   │               ┌──────────┴──────────────────────┐               │  │
+│   │               ▼                                 ▼               │  │
+│   │        ┌─────────────┐                  ┌─────────────┐         │  │
+│   │        │ Chrome Pod  │                  │ Firefox Pod │         │  │
+│   │        │ (spawned    │                  │ (spawned    │         │  │
+│   │        │  on-demand) │                  │  on-demand) │         │  │
+│   │        │ DELETED     │                  │ DELETED     │         │  │
+│   │        │ when done   │                  │ when done   │         │  │
+│   │        └─────────────┘                  └─────────────┘         │  │
+│   └─────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────┘
+         ▲
+         │
+Azure DevOps ── full pipeline: build app → deploy to OpenShift → trigger tests → publish results
+```
+
+**Azure DevOps plays a broader orchestration role** in this architecture, because Architecture 3 typically forms part of a full CI/CD pipeline — not just a test trigger:
+
+```
+Azure DevOps Pipeline (azure-pipelines.yml)
+│
+├── Stage: Build
+│   └── Build Docker images → push to Azure Container Registry
+│
+├── Stage: Deploy
+│   └── helm upgrade --install (deploy updated app to OpenShift)
+│
+├── Stage: Test
+│   └── JenkinsQueueJob@2 → Jenkins → Selenium Grid 4 → run full suite
+│
+└── Stage: Publish Results
+    └── PublishTestResults@2 → JUnit XML → Azure Test Plans
+        + ADO notification rules → Teams or Slack alerts on failure
+```
+
+Azure DevOps is the **outer CI/CD orchestrator** (build, deploy, report). Jenkins is the dedicated **test execution layer** — it manages the Grid lifecycle and handles the test runner logic. Neither tool is trying to do the other's job.
+
+**Deploying Selenium Grid 4 on OpenShift** uses the official Selenium Helm chart:
+
+```bash
+helm repo add docker-selenium https://www.selenium.dev/docker-selenium
+helm install selenium-grid docker-selenium/selenium-grid \
+  --set isolateComponents=true \
+  --set autoscaling.enabled=true \
+  --set chromeNode.enabled=true \
+  --set firefoxNode.enabled=true
+```
+
+The chart handles RBAC, ServiceAccounts, and the SecurityContextConstraints that OpenShift requires for browser pods to run headless as a non-root user.
+
+**When to use this architecture:**
+- Large test suite (500+ tests) requiring elastic scaling
+- Multiple teams sharing the same Grid infrastructure
+- OpenShift-native organisation already comfortable deploying via Helm
+- Azure DevOps is the primary CI/CD platform; Jenkins is the specialised test runner
+- Budget optimisation matters — elastic pods mean you only pay for compute when tests are actually running
+
+---
+
+**Summary: all three Selenium architectures at a glance**
+
+| Aspect | Arch 1: Jenkins Agent | Arch 2: Static Grid | Arch 3: Elastic Grid 4 |
+|---|---|---|---|
+| **Browser location** | Same pod as Jenkins | Dedicated static Node pods | Ephemeral pods created per session |
+| **Parallelism** | No — sequential only | Yes — fixed pool of nodes | Yes — elastic, scales with demand |
+| **Resource efficiency** | Moderate | Low (nodes idle between builds) | High — pods exist only during tests |
+| **Infrastructure complexity** | Low | Medium | High |
+| **Cross-browser** | Chrome only (practical) | Chrome + Firefox | Chrome + Firefox + Edge |
+| **ADO integration** | JenkinsQueueJob task | JenkinsQueueJob + JUnit publish to Test Plans | Full pipeline: build → deploy → test → report |
+| **Best for** | Small teams / proof of concept | Medium teams, regular CI | Large organisations, enterprise scale |
+
+> **Most common in practice**: Architecture 2 (Static Selenium Grid) is the production standard for the majority of enterprise Selenium installations. Most teams that built a Selenium suite in the last decade are running a Hub + Chrome/Firefox Node setup — it is well-understood, well-documented, and has years of tooling around it. Architecture 1 (co-located on Jenkins) appears in smaller shops or older legacy setups where the suite never outgrew a single machine. Architecture 3 (Grid 4 elastic) is where the industry is clearly heading — particularly on cloud-native platforms like OpenShift — but it remains the minority in production today. If your client has a mature Selenium suite on OpenShift running with Azure DevOps, the safe assumption is a static Grid (Architecture 2) triggered by ADO webhooks via a Jenkinsfile pipeline. Knowing the path forward to Grid 4 — and being able to articulate why elastic pod provisioning is better — is what separates a junior answer from a senior one.
